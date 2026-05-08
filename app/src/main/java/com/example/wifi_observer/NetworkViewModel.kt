@@ -24,15 +24,13 @@ class NetworkViewModel: ViewModel() {
 
     fun getNetworkStatus() {
         // TODO: 実際にネットワーク状態を取得する
-        viewModelScope.launch {
-            if (_uiState.value.networkStatus != NetworkStatus.Wifi) {
-                _uiState.update {
-                    it.copy(networkStatus = NetworkStatus.Wifi)
-                }
-            } else {
-                _uiState.update {
-                    it.copy(networkStatus = NetworkStatus.Mobile)
-                }
+        if (_uiState.value.networkStatus != NetworkStatus.Wifi) {
+            _uiState.update {
+                it.copy(networkStatus = NetworkStatus.Wifi)
+            }
+        } else {
+            _uiState.update {
+                it.copy(networkStatus = NetworkStatus.Mobile)
             }
         }
     }
