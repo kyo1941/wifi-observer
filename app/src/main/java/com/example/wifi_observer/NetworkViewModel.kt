@@ -19,7 +19,7 @@ data class UiState(
 )
 
 class NetworkViewModel: ViewModel() {
-    val _uiState = MutableStateFlow(UiState(NetworkStatus.Unknown))
+    private val _uiState = MutableStateFlow(UiState(NetworkStatus.Unknown))
     val uiState = _uiState.asStateFlow()
 
     fun getNetworkStatus() {
