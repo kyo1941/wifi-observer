@@ -9,11 +9,11 @@ import androidx.compose.ui.unit.dp
 
 @Composable
 fun NetworkCheckButtons(
-    onClicked: () -> Unit,
+    onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Button(
-        onClick = onClicked,
+        onClick = onClick,
         modifier = modifier.padding(24.dp),
     ) {
         Text(text = "チェック")
