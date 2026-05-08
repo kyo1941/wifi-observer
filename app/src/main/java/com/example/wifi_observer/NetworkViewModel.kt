@@ -8,10 +8,10 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 sealed interface NetworkStatus {
-    object Wifi: NetworkStatus
-    object Mobile: NetworkStatus
-    object Disconnected: NetworkStatus
-    object Unknown: NetworkStatus
+    data object Wifi: NetworkStatus
+    data object Mobile: NetworkStatus
+    data object Disconnected: NetworkStatus
+    data object Unknown: NetworkStatus
 }
 
 data class UiState(
