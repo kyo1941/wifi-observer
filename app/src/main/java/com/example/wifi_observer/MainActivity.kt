@@ -17,11 +17,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             WifiobserverTheme {
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    val networkViewModel = NetworkViewModel()
-                    NetworkScreen(
-                        viewModel = networkViewModel,
-                        modifier = Modifier.padding(innerPadding)
-                    )
+                    NetworkScreen(modifier = Modifier.padding(innerPadding))
                 }
             }
         }

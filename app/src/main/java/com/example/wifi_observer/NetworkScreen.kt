@@ -10,11 +10,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.lifecycle.viewmodel.compose.viewModel
 
 @Composable
 fun NetworkScreen(
-    viewModel: NetworkViewModel,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    viewModel: NetworkViewModel = viewModel(),
 ) {
     val uiState = viewModel.uiState.collectAsState()
     Column(
@@ -31,8 +32,5 @@ fun NetworkScreen(
 @Preview
 @Composable
 fun NetworkScreenPreview() {
-    NetworkScreen(
-        modifier = Modifier.background(Color.White),
-        viewModel = NetworkViewModel()
-    )
+    NetworkScreen(modifier = Modifier.background(Color.White))
 }
