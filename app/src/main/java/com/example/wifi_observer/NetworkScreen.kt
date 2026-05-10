@@ -11,11 +11,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.wifi_observer.viewmodel.NetworkViewModel
+import com.example.wifi_observer.viewmodel.factory.NetworkViewModelFactory
 
 @Composable
 fun NetworkScreen(
     modifier: Modifier = Modifier,
-    viewModel: NetworkViewModel = viewModel(),
+    viewModel: NetworkViewModel,
 ) {
     val uiState = viewModel.uiState.collectAsState()
     Column(
@@ -24,7 +26,7 @@ fun NetworkScreen(
     ) {
         Spacer(modifier = Modifier.weight(1f))
         NetworkStatusView(networkStatus = uiState.value.networkStatus)
-        NetworkCheckButtons(viewModel::getNetworkStatus)
+        NetworkCheckButtons(viewModel::observeNetworkStatus)
         Spacer(modifier = Modifier.weight(1f))
     }
 }
@@ -32,5 +34,6 @@ fun NetworkScreen(
 @Preview
 @Composable
 fun NetworkScreenPreview() {
-    NetworkScreen(modifier = Modifier.background(Color.White))
+    // TODO: ViewModel の依存を剥がすために stateless の Composable に分割する
+    // NetworkScreen(modifier = Modifier.background(Color.White))
 }
