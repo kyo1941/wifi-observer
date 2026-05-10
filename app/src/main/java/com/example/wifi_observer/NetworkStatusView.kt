@@ -8,15 +8,10 @@ import androidx.compose.ui.text.font.FontWeight
 @Composable
 fun NetworkStatusView(
     modifier: Modifier = Modifier,
-    networkStatus: NetworkStatus
+    networkStatus: NetworkUiStatus
 ) {
     Text(
-        text = when(networkStatus) {
-            NetworkStatus.Wifi -> "Wifi"
-            NetworkStatus.Mobile -> "Mobile"
-            NetworkStatus.Disconnected -> "Disconnected"
-            NetworkStatus.Unknown -> "Unknown"
-        },
+        text = networkStatus.toString(),
         fontWeight = FontWeight.Bold,
         modifier = modifier,
     )
