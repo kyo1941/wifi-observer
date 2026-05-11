@@ -14,6 +14,7 @@ class NetworkUseCase(
     private val networkConnectivity: NetworkConnectivity
 ) {
     fun observeNetworkStatus(): Flow<NetworkUiStatus> {
+        // TODO: Wifi →　Mobile の時にプッシュ通知を表示する
         return networkConnectivity.observeNetworkStatus().map { it.toUiStatus() }
     }
 
