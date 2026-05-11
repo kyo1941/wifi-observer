@@ -39,7 +39,8 @@ class NetworkViewModel(
     }
 
     fun observeNetworkStatus() {
-        networkObserveJob?.cancel()
+        if (networkObserveJob?.isActive == true) return
+
         _uiState.value = UiState.Ready(
             networkStatus = NetworkUiStatus.Loading,
             isObserving = true
@@ -57,13 +58,7 @@ class NetworkViewModel(
                  * エラーが発生した場合は監視を停止して、再監視のための UI に更新する
                  */
                 if (status is NetworkUiStatus.Error) {
-                    _uiState.update { current ->
-                        when (current) {
-                            is UiState.Ready -> current.copy(isObserving = false)
-                            is UiState.Init -> current
-                        }
-                    }
-                    return@collect
+                    stopObserveNetworkStatus()
                 }
             }
         }
