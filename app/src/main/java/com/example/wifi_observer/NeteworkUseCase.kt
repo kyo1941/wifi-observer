@@ -18,22 +18,26 @@ class NetworkUseCase(
     }
 
     suspend fun getCurrentNetworkStatus(): NetworkUiStatus {
-        return networkConnectivity.observeNetworkStatus().firstOrNull()?.toUiStatus() ?: NetworkUiStatus.Error("まだネットワーク状態が取得できていません。もう少しお待ちください。")
+        return networkConnectivity.observeNetworkStatus().firstOrNull()?.toUiStatus()
+            ?: NetworkUiStatus.Error("まだネットワーク状態が取得できていません。もう少しお待ちください。")
     }
 
     private fun Result<NetworkStatus>.toUiStatus(): NetworkUiStatus {
-        return try {
-            when (getOrThrow()) {
-                is NetworkStatus.Connected -> when ((getOrThrow() as NetworkStatus.Connected).type) {
-                    NetworkStatus.NetworkType.Wifi -> NetworkUiStatus.Wifi
-                    NetworkStatus.NetworkType.Mobile -> NetworkUiStatus.Mobile
-                    NetworkStatus.NetworkType.Other -> NetworkUiStatus.Other
-                }
+        return fold(
+            onSuccess = { status ->
+                when (status) {
+                    is NetworkStatus.Connected -> when (status.type) {
+                        NetworkStatus.NetworkType.Wifi -> NetworkUiStatus.Wifi
+                        NetworkStatus.NetworkType.Mobile -> NetworkUiStatus.Mobile
+                        NetworkStatus.NetworkType.Other -> NetworkUiStatus.Other
+                    }
 
-                is NetworkStatus.NotConnected -> NetworkUiStatus.NotConnected
+                    is NetworkStatus.NotConnected -> NetworkUiStatus.NotConnected
+                }
+            },
+            onFailure = {
+                NetworkUiStatus.Error("ネットワーク状態の取得に失敗しました")
             }
-        } catch (e: Exception) {
-            NetworkUiStatus.Error("ネットワーク状態の取得に失敗しました")
-        }
+        )
     }
 }
