@@ -10,7 +10,6 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 sealed interface NetworkUiStatus {
-    data object Init : NetworkUiStatus
     data object Loading : NetworkUiStatus
     data object Wifi : NetworkUiStatus
     data object Mobile : NetworkUiStatus
@@ -19,52 +18,63 @@ sealed interface NetworkUiStatus {
     data class Error(val message: String) : NetworkUiStatus
 }
 
-data class UiState(
-    val networkStatus: NetworkUiStatus,
-    val isObserving: Boolean
-)
+sealed interface UiState {
+    data object Init : UiState
+    data class Ready(
+        val networkStatus: NetworkUiStatus,
+        val isObserving: Boolean
+    ) : UiState
+}
 
 class NetworkViewModel(
     private val networkUseCase: NetworkUseCase
 ) : ViewModel() {
-    private val _uiState = MutableStateFlow(
-        UiState(
-            networkStatus = NetworkUiStatus.Init,
-            isObserving = false
-        )
-    )
+    private val _uiState: MutableStateFlow<UiState> = MutableStateFlow(UiState.Init)
     val uiState = _uiState.asStateFlow()
 
     private var networkObserveJob: Job? = null
 
     fun getNetworkStatus() {
         // TODO: 実際にネットワーク状態を取得する
-        if (_uiState.value.networkStatus != NetworkUiStatus.Wifi) {
-            _uiState.update { it.copy(networkStatus = NetworkUiStatus.Wifi) }
-        } else {
-            _uiState.update { it.copy(networkStatus = NetworkUiStatus.Mobile) }
-        }
     }
 
     fun observeNetworkStatus() {
         networkObserveJob?.cancel()
-        _uiState.update {
-            it.copy(
-                networkStatus = NetworkUiStatus.Loading,
-                isObserving = true
-            )
-        }
+        _uiState.value = UiState.Ready(
+            networkStatus = NetworkUiStatus.Loading,
+            isObserving = true
+        )
         networkObserveJob = viewModelScope.launch {
             networkUseCase.observeNetworkStatus().collect { status ->
-                _uiState.update { it.copy(networkStatus = status) }
+                _uiState.update { current ->
+                    when (current) {
+                        is UiState.Ready -> current.copy(networkStatus = status)
+                        is UiState.Init -> UiState.Ready(status, isObserving = true)
+                    }
+                }
 
                 /**
                  * エラーが発生した場合は監視を停止して、再監視のための UI に更新する
                  */
                 if (status is NetworkUiStatus.Error) {
-                    _uiState.update { it.copy(isObserving = false) }
+                    _uiState.update { current ->
+                        when (current) {
+                            is UiState.Ready -> current.copy(isObserving = false)
+                            is UiState.Init -> current
+                        }
+                    }
                     return@collect
                 }
+            }
+        }
+    }
+
+    fun stopObserveNetworkStatus() {
+        networkObserveJob?.cancel()
+        _uiState.update { current ->
+            when (current) {
+                is UiState.Ready -> current.copy(isObserving = false)
+                is UiState.Init -> current
             }
         }
     }

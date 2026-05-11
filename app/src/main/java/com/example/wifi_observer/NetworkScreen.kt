@@ -12,6 +12,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.wifi_observer.viewmodel.NetworkViewModel
+import com.example.wifi_observer.viewmodel.UiState
 import com.example.wifi_observer.viewmodel.factory.NetworkViewModelFactory
 
 @Composable
@@ -25,7 +26,10 @@ fun NetworkScreen(
         modifier = modifier.fillMaxSize(),
     ) {
         Spacer(modifier = Modifier.weight(1f))
-        NetworkStatusView(networkStatus = uiState.value.networkStatus)
+        when (val state = uiState.value) {
+            is UiState.Init -> Unit
+            is UiState.Ready -> NetworkStatusView(networkStatus = state.networkStatus)
+        }
         NetworkCheckButtons(viewModel::observeNetworkStatus)
         Spacer(modifier = Modifier.weight(1f))
     }
