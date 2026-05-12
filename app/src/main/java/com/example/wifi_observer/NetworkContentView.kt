@@ -1,9 +1,11 @@
 package com.example.wifi_observer
 
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import com.example.wifi_observer.components.network.NetworkIconOnly
 import com.example.wifi_observer.components.network.NetworkIconTextButton
 import com.example.wifi_observer.viewmodel.NetworkUiStatus
@@ -23,7 +25,7 @@ fun NetworkContentView(
                 actionButton = {
                     NetworkIconTextButton(
                         iconPainter = painterResource(R.drawable.baseline_stop_24),
-                        labelText = "停止",
+                        labelText = stringResource(R.string.stop),
                         onClick = onStopObserve
                     )
                 }
@@ -40,7 +42,7 @@ fun NetworkContentView(
                 actionButton = {
                     NetworkIconTextButton(
                         iconPainter = painterResource(R.drawable.baseline_stop_24),
-                        labelText = "停止",
+                        labelText = stringResource(R.string.stop),
                         onClick = onStopObserve
                     )
                 }
@@ -54,10 +56,13 @@ fun NetworkContentView(
                         painter = networkStatus.toIcon()
                     )
                 },
+                middleContent = {
+                    Text(text = networkStatus.message)
+                },
                 actionButton = {
                     NetworkIconTextButton(
                         iconPainter = painterResource(R.drawable.baseline_autorenew_24),
-                        labelText = "再試行",
+                        labelText = stringResource(R.string.retry),
                         onClick = onStartObserve
                     )
                 }

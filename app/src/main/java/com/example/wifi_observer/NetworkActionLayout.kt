@@ -17,6 +17,7 @@ private val NetworkTopContentBottomSpacing = 144.dp
 fun NetworkActionLayout(
     modifier: Modifier = Modifier,
     topContent: @Composable () -> Unit,
+    middleContent: @Composable () -> Unit = {},
     actionButton: @Composable () -> Unit,
 ) {
     Column(
@@ -29,6 +30,7 @@ fun NetworkActionLayout(
         ) {
             topContent()
         }
+        middleContent()
         Spacer(modifier = Modifier.height(NetworkTopContentBottomSpacing))
         actionButton()
     }
