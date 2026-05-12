@@ -20,10 +20,7 @@ sealed interface NetworkUiStatus {
 
 sealed interface UiState {
     data object Init : UiState
-    data class Ready(
-        val networkStatus: NetworkUiStatus,
-        val isObserving: Boolean
-    ) : UiState
+    data class Ready(val networkStatus: NetworkUiStatus) : UiState
 }
 
 class NetworkViewModel(
@@ -41,24 +38,22 @@ class NetworkViewModel(
     fun observeNetworkStatus() {
         if (networkObserveJob?.isActive == true) return
 
-        _uiState.value = UiState.Ready(
-            networkStatus = NetworkUiStatus.Loading,
-            isObserving = true
-        )
+        _uiState.value = UiState.Ready(networkStatus = NetworkUiStatus.Loading)
         networkObserveJob = viewModelScope.launch {
             networkUseCase.observeNetworkStatus().collect { status ->
                 _uiState.update { current ->
                     when (current) {
                         is UiState.Ready -> current.copy(networkStatus = status)
-                        is UiState.Init -> UiState.Ready(status, isObserving = true)
+                        is UiState.Init -> UiState.Ready(status)
                     }
                 }
 
-                /**
-                 * エラーが発生した場合は監視を停止して、再監視のための UI に更新する
-                 */
                 if (status is NetworkUiStatus.Error) {
-                    stopObserveNetworkStatus()
+                    networkObserveJob?.cancel()
+                    /**
+                     * エラーが発生した場合は監視を停止して、再監視のための UI に更新する
+                     * TODO: ここで Snackbar を表示して、そこからも再試行をできるようにする
+                     */
                 }
             }
         }
@@ -66,11 +61,6 @@ class NetworkViewModel(
 
     fun stopObserveNetworkStatus() {
         networkObserveJob?.cancel()
-        _uiState.update { current ->
-            when (current) {
-                is UiState.Ready -> current.copy(isObserving = false)
-                is UiState.Init -> current
-            }
-        }
+        _uiState.update { UiState.Init }
     }
 }
