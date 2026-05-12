@@ -31,10 +31,6 @@ class NetworkViewModel(
 
     private var networkObserveJob: Job? = null
 
-    fun getNetworkStatus() {
-        // TODO: 実際にネットワーク状態を取得する
-    }
-
     fun observeNetworkStatus() {
         if (networkObserveJob?.isActive == true) return
 
