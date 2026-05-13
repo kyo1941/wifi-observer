@@ -43,7 +43,6 @@ fun NetworkIconTextButton(
             modifier = Modifier.size(64.dp)
         )
         Text(
-            modifier = Modifier.padding(bottom = 8.dp),
             text = labelText,
             fontSize = 16.sp,
             fontWeight = FontWeight.Bold
