@@ -138,8 +138,7 @@ package "iosMain" #FFF3DD {
 ### Android 13/14 (Target SDK 36) の制約と対応
 
 1. **通知パーミッション（Android 13+ / API 33+）**
-   - バックグラウンドでの通知送信、および Foreground Service の表示には、ランタイムでの `android.permission.POST_NOTIFICATIONS` 権限の許可が必須。
-   - アプリ起動時または監視機能の有効化時に、ユーザーに権限要求ダイアログを表示する。
+   - `POST_NOTIFICATIONS` 権限の許可はバックグラウンドでの通知表示に必要ですが、Foreground Service (FGS) 自体の起動・動作自体は通知権限がなくても実行可能です（その場合、通知は表示されません）。ただし、ユーザーにサービスの稼働を示すために、アプリ起動時または監視機能の有効化時に権限要求ダイアログを表示することが推奨されます。
 
 2. **Foreground Service Type の指定（Android 14+ / API 34+）**
    - Foreground Service の起動にあたり、マニフェストおよびコード内での `foregroundServiceType` の明示的な指定が必須。
@@ -152,7 +151,11 @@ package "iosMain" #FFF3DD {
      <service
          android:name=".platform.ForegroundMonitoringService"
          android:foregroundServiceType="specialUse"
-         android:exported="false" />
+         android:exported="false">
+         <property
+             android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+             android:value="Network switching observer for notification" />
+     </service>
      ```
    - **Service 起動時の指定（コード内）:**
      ```kotlin
@@ -189,13 +192,18 @@ WiFi→モバイル検知時の通知は別チャンネルで `IMPORTANCE_HIGH` 
 ```kotlin
 var previousStatus: NetworkStatus? = null
 
-networkConnectivity.observeNetworkStatus().collect { result ->
-    val current = result.getOrNull() ?: return@collect
-    if (previousStatus is NetworkStatus.Connected && (previousStatus as NetworkStatus.Connected).type is NetworkStatus.NetworkType.Wifi
-        && current is NetworkStatus.Connected && current.type is NetworkStatus.NetworkType.Mobile) {
-        networkNotifier.notifyWifiToMobile()
-    }
-    previousStatus = current
+fun observeNetworkStatus(): Flow<Result<NetworkStatus>> {
+    return networkConnectivity.observeNetworkStatus()
+        .onEach { result ->
+            val current = result.getOrNull() ?: return@onEach
+            val previous = previousStatus
+            
+            if (previous is NetworkStatus.Connected && previous.type == NetworkStatus.NetworkType.Wifi
+                && current is NetworkStatus.Connected && current.type == NetworkStatus.NetworkType.Mobile) {
+                networkNotifier.notifyWifiToMobile()
+            }
+            previousStatus = current
+        }
 }
 ```
 
