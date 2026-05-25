@@ -11,20 +11,30 @@ import kotlinx.coroutines.launch
 
 sealed interface NetworkUiStatus {
     data object Loading : NetworkUiStatus
+
     data object Wifi : NetworkUiStatus
+
     data object Mobile : NetworkUiStatus
+
     data object Other : NetworkUiStatus
+
     data object NotConnected : NetworkUiStatus
-    data class Error(val message: String) : NetworkUiStatus
+
+    data class Error(
+        val message: String,
+    ) : NetworkUiStatus
 }
 
 sealed interface UiState {
     data object Init : UiState
-    data class Ready(val networkStatus: NetworkUiStatus) : UiState
+
+    data class Ready(
+        val networkStatus: NetworkUiStatus,
+    ) : UiState
 }
 
 class NetworkViewModel(
-    private val networkUseCase: NetworkUseCase
+    private val networkUseCase: NetworkUseCase,
 ) : ViewModel() {
     private val _uiState: MutableStateFlow<UiState> = MutableStateFlow(UiState.Init)
     val uiState = _uiState.asStateFlow()
@@ -35,24 +45,25 @@ class NetworkViewModel(
         if (networkObserveJob?.isActive == true) return
 
         _uiState.value = UiState.Ready(networkStatus = NetworkUiStatus.Loading)
-        networkObserveJob = viewModelScope.launch {
-            networkUseCase.observeNetworkStatus().collect { status ->
-                _uiState.update { current ->
-                    when (current) {
-                        is UiState.Ready -> current.copy(networkStatus = status)
-                        is UiState.Init -> UiState.Ready(status)
+        networkObserveJob =
+            viewModelScope.launch {
+                networkUseCase.observeNetworkStatus().collect { status ->
+                    _uiState.update { current ->
+                        when (current) {
+                            is UiState.Ready -> current.copy(networkStatus = status)
+                            is UiState.Init -> UiState.Ready(status)
+                        }
+                    }
+
+                    if (status is NetworkUiStatus.Error) {
+                        networkObserveJob?.cancel()
+                        /**
+                         * エラーが発生した場合は監視を停止して、再監視のための UI に更新する
+                         * TODO: ここで Snackbar を表示して、そこからも再試行をできるようにする
+                         */
                     }
                 }
-
-                if (status is NetworkUiStatus.Error) {
-                    networkObserveJob?.cancel()
-                    /**
-                     * エラーが発生した場合は監視を停止して、再監視のための UI に更新する
-                     * TODO: ここで Snackbar を表示して、そこからも再試行をできるようにする
-                     */
-                }
             }
-        }
     }
 
     fun stopObserveNetworkStatus() {

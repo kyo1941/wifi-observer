@@ -18,12 +18,12 @@ import androidx.compose.ui.unit.dp
 fun NetworkIconOnly(
     modifier: Modifier = Modifier,
     painter: Painter,
-    tint: Color = LocalContentColor.current
+    tint: Color = LocalContentColor.current,
 ) {
     Icon(
         modifier = modifier.size(120.dp),
         painter = painter,
         contentDescription = null,
-        tint = tint
+        tint = tint,
     )
 }

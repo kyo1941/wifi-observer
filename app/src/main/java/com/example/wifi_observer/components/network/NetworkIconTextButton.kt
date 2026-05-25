@@ -2,7 +2,6 @@ package com.example.wifi_observer.components.network
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -40,14 +39,13 @@ fun NetworkIconTextButton(
         Icon(
             painter = iconPainter,
             contentDescription = null,
-            modifier = Modifier.size(64.dp)
+            modifier = Modifier.size(64.dp),
         )
         Text(
             text = labelText,
             fontSize = 16.sp,
-            fontWeight = FontWeight.Bold
+            fontWeight = FontWeight.Bold,
         )
-
     }
 }
 
@@ -57,6 +55,6 @@ private fun NetworkIconTextButtonPreview() {
     NetworkIconTextButton(
         iconPainter = painterResource(R.drawable.ic_launcher_foreground),
         labelText = "label text",
-        onClick = {}
+        onClick = {},
     )
 }

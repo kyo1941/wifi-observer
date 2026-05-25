@@ -6,7 +6,7 @@ import com.example.wifi_observer.NetworkUseCase
 import com.example.wifi_observer.viewmodel.NetworkViewModel
 
 class NetworkViewModelFactory(
-    private val networkUseCase: NetworkUseCase
+    private val networkUseCase: NetworkUseCase,
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T {

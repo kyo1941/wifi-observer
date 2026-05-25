@@ -26,9 +26,9 @@ fun NetworkContentView(
                     NetworkIconTextButton(
                         iconPainter = painterResource(R.drawable.baseline_stop_24),
                         labelText = stringResource(R.string.stop),
-                        onClick = onStopObserve
+                        onClick = onStopObserve,
                     )
-                }
+                },
             )
         }
 
@@ -36,16 +36,16 @@ fun NetworkContentView(
             NetworkActionLayout(
                 topContent = {
                     NetworkIconOnly(
-                        painter = networkStatus.toIcon()
+                        painter = networkStatus.toIcon(),
                     )
                 },
                 actionButton = {
                     NetworkIconTextButton(
                         iconPainter = painterResource(R.drawable.baseline_stop_24),
                         labelText = stringResource(R.string.stop),
-                        onClick = onStopObserve
+                        onClick = onStopObserve,
                     )
-                }
+                },
             )
         }
 
@@ -53,7 +53,7 @@ fun NetworkContentView(
             NetworkActionLayout(
                 topContent = {
                     NetworkIconOnly(
-                        painter = networkStatus.toIcon()
+                        painter = networkStatus.toIcon(),
                     )
                 },
                 middleContent = {
@@ -63,17 +63,17 @@ fun NetworkContentView(
                     NetworkIconTextButton(
                         iconPainter = painterResource(R.drawable.baseline_autorenew_24),
                         labelText = stringResource(R.string.retry),
-                        onClick = onStartObserve
+                        onClick = onStartObserve,
                     )
-                }
+                },
             )
         }
     }
 }
 
 @Composable
-fun NetworkUiStatus.toIcon(): Painter {
-    return when (this) {
+fun NetworkUiStatus.toIcon(): Painter =
+    when (this) {
         is NetworkUiStatus.Wifi -> painterResource(R.drawable.outline_android_wifi_3_bar_24)
         is NetworkUiStatus.Mobile -> painterResource(R.drawable.outline_cell_wifi_24)
         is NetworkUiStatus.Other -> painterResource(R.drawable.outline_globe_24)
@@ -83,4 +83,3 @@ fun NetworkUiStatus.toIcon(): Painter {
         // NOTE: ローディング時はアイコンを使用しない
         is NetworkUiStatus.Loading -> painterResource(R.drawable.outline_forward_circle_24)
     }
-}
