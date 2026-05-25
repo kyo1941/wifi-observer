@@ -7,7 +7,7 @@ import com.example.wifi_observer.platform.NetworkConnectivityImpl
 import com.example.wifi_observer.platform.interfaces.NetworkConnectivity
 
 class AppContainer(
-    context: Context
+    context: Context,
 ) {
     private val appContext = context.applicationContext
 

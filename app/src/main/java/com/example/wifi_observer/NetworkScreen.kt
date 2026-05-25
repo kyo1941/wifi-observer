@@ -27,18 +27,17 @@ fun NetworkScreen(
 }
 
 @Composable
-fun NetworkScreenSwitcher(
-    viewModel: NetworkViewModel
-) {
+fun NetworkScreenSwitcher(viewModel: NetworkViewModel) {
     val uiState = viewModel.uiState.collectAsStateWithLifecycle()
 
     when (val state = uiState.value) {
         is UiState.Init -> NetworkInitialView(onClick = viewModel::observeNetworkStatus)
-        is UiState.Ready -> NetworkContentView(
-            networkStatus = state.networkStatus,
-            onStartObserve = viewModel::observeNetworkStatus,
-            onStopObserve = viewModel::stopObserveNetworkStatus
-        )
+        is UiState.Ready ->
+            NetworkContentView(
+                networkStatus = state.networkStatus,
+                onStartObserve = viewModel::observeNetworkStatus,
+                onStopObserve = viewModel::stopObserveNetworkStatus,
+            )
     }
 }
 
