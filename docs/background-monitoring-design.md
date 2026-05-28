@@ -26,14 +26,27 @@ Android 7以降、バックグラウンドアプリへの `CONNECTIVITY_CHANGE` 
 |----|------|---------------|
 | ビジネスロジック | `NetworkUseCase` | `commonMain` |
 | 監視インターフェース | `NetworkConnectivity` | `commonMain` |
-| 通知インターフェース | `NetworkNotifier` | `commonMain` |
+| 通知Presenterインターフェース | `NetworkNotificationPresenter` | `commonMain` |
+| UI更新Presenterインターフェース | `NetworkStatusPresenter` | `commonMain` |
 | バックグラウンド実行インターフェース | `BackgroundMonitoringService` | `commonMain` |
-| Android 実装 | `NetworkConnectivityImpl`, `NetworkNotifierImpl`, `ForegroundMonitoringService` | `androidMain` |
+| Android 実装 | `NetworkConnectivityImpl`, `NetworkNotifierImpl`, `ForegroundMonitoringService`, `ForegroundMonitoringServiceController` | `androidMain` |
 | iOS 実装 | `NetworkConnectivityImpl`, `NetworkNotifierImpl`, `BackgroundMonitoringServiceImpl` | `iosMain` |
 
-`NetworkUseCase` は `NetworkConnectivity` と `NetworkNotifier` に依存し、監視ストリームの提供、状態遷移（WiFi → モバイル）の検知、および通知のトリガー処理をストリーム演算子（`onEach`）内で一元的に行います。
-バックグラウンド監視の開始・停止は `NetworkViewModel#observeNetworkStatus()` / `NetworkViewModel#stopObserveNetworkStatus()` から `BackgroundMonitoringService` を介して行います。
-`ForegroundMonitoringService` / `BackgroundMonitoringServiceImpl` は、データソースや通知の仕組みに直接依存せず、`NetworkUseCase` の監視ストリームを単に `collect()` してバックグラウンド実行を維持するだけの「薄いラッパー（殻）」として動作します。
+### Presenter パターンによる責務分離
+
+通知とUI更新の責務を2つのPresenterインターフェースに分離することで、それぞれのライフサイクルに合った実装者が担当できる。
+
+| インターフェース | 実装者 | ライフサイクル |
+|---|---|---|
+| `NetworkNotificationPresenter` | `ForegroundMonitoringService` | FGS と同じ（タスクキル後も生存） |
+| `NetworkStatusPresenter` | `NetworkViewModel` | UI と同じ（タスクキル後は破棄） |
+
+`NetworkUseCase` は `observe(scope, notificationPresenter?, statusPresenter?)` を提供し、コルーチンスコープ内で監視ループを駆動する。Presenter は呼び出し元が注入するため、UseCase はプラットフォーム固有の実装に依存しない。
+
+- **FGS**: `serviceScope` と自身（`NetworkNotificationPresenter`）を渡して `observe()` を呼ぶ。タスクキル後も通知を発火できる。
+- **ViewModel**: `viewModelScope` と自身（`NetworkStatusPresenter`）を渡して `observe()` を呼ぶ。UI を更新する。
+
+`ForegroundMonitoringServiceController` は `Context` を使って FGS を起動・停止する薄いラッパーであり、`BackgroundMonitoringService` インターフェースを実装する。
 
 ## クラス図
 
@@ -47,8 +60,12 @@ package "commonMain" #DDEEFF {
         +observeNetworkStatus(): Flow<Result<NetworkStatus>>
     }
 
-    interface NetworkNotifier {
-        +notifyWifiToMobile()
+    interface NetworkNotificationPresenter {
+        +displayNotification()
+    }
+
+    interface NetworkStatusPresenter {
+        +presentCurrentNetworkStatus(status: NetworkUiStatus)
     }
 
     interface BackgroundMonitoringService {
@@ -58,9 +75,7 @@ package "commonMain" #DDEEFF {
 
     class NetworkUseCase {
         -networkConnectivity: NetworkConnectivity
-        -networkNotifier: NetworkNotifier
-        -previousStatus: NetworkStatus
-        +observeNetworkStatus(): Flow<NetworkUiStatus>
+        +observe(scope, notificationPresenter?, statusPresenter?): Job
         +getCurrentNetworkStatus(): NetworkUiStatus
     }
 
@@ -70,7 +85,8 @@ package "commonMain" #DDEEFF {
     }
 
     NetworkUseCase --> NetworkConnectivity
-    NetworkUseCase --> NetworkNotifier
+    NetworkUseCase ..> NetworkNotificationPresenter
+    NetworkUseCase ..> NetworkStatusPresenter
 }
 
 package "presentation" #E8E8FF {
@@ -79,8 +95,10 @@ package "presentation" #E8E8FF {
         -backgroundMonitoringService: BackgroundMonitoringService
         +observeNetworkStatus()
         +stopObserveNetworkStatus()
+        +presentCurrentNetworkStatus(status)
     }
 
+    NetworkViewModel ..|> NetworkStatusPresenter
     NetworkViewModel --> NetworkUseCase
     NetworkViewModel --> BackgroundMonitoringService
 }
@@ -98,15 +116,22 @@ package "androidMain" #DDFFDD {
 
     class ForegroundMonitoringService {
         -networkUseCase: NetworkUseCase
+        -networkNotifier: NetworkNotifierImpl
         +onStartCommand(): Int
+        +displayNotification()
+    }
+
+    class ForegroundMonitoringServiceController {
+        -context: Context
         +start()
         +stop()
     }
 
     NetworkConnectivityImpl ..|> NetworkConnectivity
-    NetworkNotifierImpl ..|> NetworkNotifier
-    ForegroundMonitoringService ..|> BackgroundMonitoringService
+    ForegroundMonitoringService ..|> NetworkNotificationPresenter
     ForegroundMonitoringService --> NetworkUseCase
+    ForegroundMonitoringService --> NetworkNotifierImpl
+    ForegroundMonitoringServiceController ..|> BackgroundMonitoringService
 }
 
 package "iosMain" #FFF3DD {
@@ -123,12 +148,14 @@ package "iosMain" #FFF3DD {
         -networkUseCase: NetworkUseCase
         +start()
         +stop()
+        +displayNotification()
     }
 
     iOSConnectivity ..|> NetworkConnectivity
-    iOSNotifier ..|> NetworkNotifier
     BackgroundMonitoringServiceImpl ..|> BackgroundMonitoringService
+    BackgroundMonitoringServiceImpl ..|> NetworkNotificationPresenter
     BackgroundMonitoringServiceImpl --> NetworkUseCase
+    BackgroundMonitoringServiceImpl --> iOSNotifier
 }
 @enduml
 ```
@@ -187,30 +214,37 @@ WiFi→モバイル検知時の通知は別チャンネルで `IMPORTANCE_HIGH` 
 
 ### 状態遷移の検知ロジック
 
-状態変化（Wifi → Mobile）のトリガー判定ロジックは、将来的なKMP共通化を見据えて `commonMain` 側のユースケースや監視エンジンに持たせることが望ましい。
+`previousStatus` は `observe()` 呼び出しごとのコルーチンローカル変数として保持する。UseCase インスタンスに状態を持たせないことで、複数の呼び出し元（FGS・ViewModel）がそれぞれ独立した状態を持つ。
 
 ```kotlin
-var previousStatus: NetworkStatus? = null
-
-fun observeNetworkStatus(): Flow<Result<NetworkStatus>> {
-    return networkConnectivity.observeNetworkStatus()
-        .onEach { result ->
-            val current = result.getOrNull() ?: return@onEach
+fun observe(
+    scope: CoroutineScope,
+    notificationPresenter: NetworkNotificationPresenter? = null,
+    statusPresenter: NetworkStatusPresenter? = null,
+): Job = scope.launch {
+    var previousStatus: NetworkStatus? = null
+    networkConnectivity.observeNetworkStatus().collect { result ->
+        val current = result.getOrNull()
+        if (current != null) {
             val previous = previousStatus
-            
-            if (previous is NetworkStatus.Connected && previous.type == NetworkStatus.NetworkType.Wifi
-                && current is NetworkStatus.Connected && current.type == NetworkStatus.NetworkType.Mobile) {
-                networkNotifier.notifyWifiToMobile()
+            if (previous is NetworkStatus.Connected &&
+                previous.type == NetworkStatus.NetworkType.Wifi &&
+                current is NetworkStatus.Connected &&
+                current.type == NetworkStatus.NetworkType.Mobile
+            ) {
+                notificationPresenter?.displayNotification()
             }
             previousStatus = current
         }
+        statusPresenter?.presentCurrentNetworkStatus(result.toUiStatus())
+    }
 }
 ```
 
 ### iOS 側のバックグラウンド動作への対応（将来）
 
 iOS ではセキュリティと省電力の制限により、バックグラウンドでのリアルタイム監視（常時ソケット接続や常時ポーリングなど）は不可能です。
-そのため、`BackgroundMonitoringService` の iOS 側の実装では以下のハイブリッドアプローチを想定します。
+そのため、`BackgroundMonitoringServiceImpl` の iOS 側の実装では以下のハイブリッドアプローチを想定します。
 
 1. **フォアグラウンド時**: `NWPathMonitor` を利用してリアルタイムにネットワーク変更を監視。
 2. **バックグラウンド時**: `BGTaskScheduler`（Background Tasks）を用いて、OSが許可したバックグラウンド実行タイミング（最短で十数分〜数時間間隔）で現在のネットワーク状態を取得。
