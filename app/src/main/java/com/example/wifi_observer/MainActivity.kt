@@ -1,9 +1,12 @@
 package com.example.wifi_observer
 
+import android.Manifest
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
@@ -14,11 +17,18 @@ import com.example.wifi_observer.viewmodel.NetworkViewModel
 import com.example.wifi_observer.viewmodel.factory.NetworkViewModelFactory
 
 class MainActivity : ComponentActivity() {
+    private val requestNotificationPermission =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) {}
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            requestNotificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+
         val appContainer = (application as WifiObserverApplication).appContainer
-        val networkViewModelFactory = NetworkViewModelFactory(appContainer.networkUseCase)
+        val networkViewModelFactory = NetworkViewModelFactory(appContainer.networkMonitor)
 
         enableEdgeToEdge()
         setContent {
