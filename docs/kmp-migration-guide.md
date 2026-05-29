@@ -12,6 +12,8 @@ KMP 移行時には、現在の Android アプリケーション構造から以�
 shared/
 ├── src/
 │   ├── commonMain/kotlin/com/example/wifi_observer/
+│   │   ├── NetworkMonitor.kt (監視開始・停止、Presenter実装、UI状態保持のFacade)
+│   │   ├── NetworkUseCase.kt (★状態遷移の検知・Presenter呼び出しのコアビジネスロジック)
 │   │   ├── model/
 │   │   │   └── NetworkStatus.kt (WiFi/Mobile定義)
 │   │   ├── platform/interfaces/
@@ -19,16 +21,15 @@ shared/
 │   │   │   ├── NetworkNotificationPresenter.kt (通知発火I/F)
 │   │   │   └── BackgroundMonitoringService.kt (監視開始・停止I/F)
 │   │   ├── viewmodel/
-│   │   │   ├── NetworkViewModel.kt (NetworkStatusPresenter実装・UI制御)
+│   │   │   ├── NetworkViewModel.kt (NetworkMonitor.status を UI 状態へ変換)
 │   │   │   ├── NetworkStatusPresenter.kt (UI更新I/F)
 │   │   │   └── NetworkUiStatus.kt (UIモデル)
-│   │   └── NetworkUseCase.kt (★状態遷移の検知・Presenter呼び出しのコアビジネスロジック)
 │   │
 │   ├── androidMain/kotlin/com/example/wifi_observer/
 │   │   └── platform/
 │   │       ├── NetworkConnectivityImpl.kt (ConnectivityManager利用)
-│   │       ├── NetworkNotifierImpl.kt (NotificationManager利用・FGS内部実装)
-│   │       ├── ForegroundMonitoringService.kt (NetworkNotificationPresenter実装・薄いFGS wrapper)
+│   │       ├── NetworkNotifierImpl.kt (NotificationManager利用)
+│   │       ├── ForegroundMonitoringService.kt (FGS wrapper・監視Job管理)
 │   │       └── ForegroundMonitoringServiceController.kt (BackgroundMonitoringService実装)
 │   │
 │   └── iosMain/kotlin/com/example/wifi_observer/
@@ -56,6 +57,8 @@ KMP 共通モジュールでキーバリュー型永続化を扱うために、*
 
 `NetworkUseCase` は、コルーチンローカルの `previousStatus` 変数のフォールバックとして、プラットフォームごとに注入される Key-Value 永続化ストア（`Settings` インターフェース）を参照し、バックグラウンド起動時にも正しく WiFi → モバイル の状態遷移を検知できるように設計します。
 
+UseCase は値や `Job` を返さず、Presenter 経由で外側へ通知します。監視 coroutine の起動と `Job` 管理は、Android では `ForegroundMonitoringService`、iOS では `BackgroundMonitoringServiceImpl` などの Platform 側が担当します。
+
 #### 状態チェックの疑似コード (共通ロジック):
 ```kotlin
 class NetworkUseCase(
@@ -66,11 +69,10 @@ class NetworkUseCase(
         private const val KEY_LAST_KNOWN_STATUS = "last_known_network_status"
     }
 
-    fun observe(
-        scope: CoroutineScope,
+    suspend fun observe(
         notificationPresenter: NetworkNotificationPresenter? = null,
         statusPresenter: NetworkStatusPresenter? = null,
-    ): Job = scope.launch {
+    ) {
         var previousStatus: NetworkStatus? = getLastKnownStatus()  // 永続化から復元
 
         networkConnectivity.observeNetworkStatus().collect { result ->
@@ -89,7 +91,7 @@ class NetworkUseCase(
             saveStatus(current)
             previousStatus = current
 
-            statusPresenter?.presentCurrentNetworkStatus(result.toUiStatus())
+            statusPresenter?.onNetworkStatusUpdated(result)
         }
     }
 
@@ -137,12 +139,19 @@ class WifiObserverApplication : Application() {
 }
 
 class AppContainer(context: Context) {
-    val networkUseCase = NetworkUseCase(
+    private val networkUseCase = NetworkUseCase(
         networkConnectivity = NetworkConnectivityImpl(
             context.getSystemService(ConnectivityManager::class.java)
         )
     )
-    val backgroundMonitoringService = ForegroundMonitoringServiceController(context)
+    private val networkNotifier = NetworkNotifierImpl(context)
+    private val backgroundMonitoringService = ForegroundMonitoringServiceController(context)
+
+    val networkMonitor = NetworkMonitor(
+        networkUseCase = networkUseCase,
+        networkNotifier = networkNotifier,
+        backgroundMonitoringService = backgroundMonitoringService,
+    )
 }
 ```
 
@@ -173,12 +182,13 @@ struct WifiObserverApp: App {
 - [x] **フェーズ 1: Android 側での実装の完了**
   - [x] 設計書を Presenter パターン（2つのPresenterインターフェース）に基づき更新
   - [x] `NetworkNotificationPresenter` / `NetworkStatusPresenter` / `BackgroundMonitoringService` の Android 定義
-  - [x] `ForegroundMonitoringService`（`NetworkNotificationPresenter` 実装）と `POST_NOTIFICATIONS` 権限対応の完了
-  - [x] `NetworkViewModel`（`NetworkStatusPresenter` 実装）による UI 更新の完了
+  - [x] `NetworkMonitor`（`NetworkNotificationPresenter` / `NetworkStatusPresenter` 実装）による通知発火・UI状態更新の完了
+  - [x] `ForegroundMonitoringService` による FGS 起動、監視 coroutine の `Job` 管理、`POST_NOTIFICATIONS` 権限対応の完了
+  - [x] `NetworkViewModel` による `NetworkMonitor.status` の UI 状態変換の完了
 - [ ] **フェーズ 2: 共有モジュール (shared) の新設とコード抽出**
   - [ ] `shared` マルチプラットフォームモジュールを Gradle に作成
   - [ ] `NetworkStatus`, `NetworkConnectivity`, `NetworkNotificationPresenter`, `NetworkStatusPresenter`, `BackgroundMonitoringService` を `commonMain` に移動
-  - [ ] `NetworkUseCase` および `NetworkViewModel` を `commonMain` に移動
+  - [ ] `NetworkUseCase`, `NetworkMonitor`, `NetworkViewModel` を `commonMain` に移動
 - [ ] **フェーズ 3: 状態永続化の共通化**
   - [ ] `multiplatform-settings` の依存追加
   - [ ] `NetworkUseCase.observe()` の `previousStatus` 初期値を `Settings` ストアから復元する形に拡張
