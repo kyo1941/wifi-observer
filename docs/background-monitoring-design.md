@@ -26,11 +26,14 @@ Android 7以降、バックグラウンドアプリへの `CONNECTIVITY_CHANGE` 
 |----|------|---------------|
 | ビジネスロジック | `NetworkUseCase` | `commonMain` |
 | 監視インターフェース | `NetworkConnectivity` | `commonMain` |
+| 通知許可Repositoryインターフェース | `NotificationPermissionRepository` | `commonMain` |
 | 通知Presenterインターフェース | `NetworkNotificationPresenter` | `commonMain` |
+| 通知許可Presenterインターフェース | `NotificationPermissionPresenter` | `commonMain` |
 | UI更新Presenterインターフェース | `NetworkStatusPresenter` | `commonMain` |
 | バックグラウンド実行インターフェース | `BackgroundMonitoringService` | `commonMain` |
 | 監視Facade | `NetworkMonitor` | `commonMain` |
-| Android 実装 | `NetworkConnectivityImpl`, `NetworkNotifierImpl`, `ForegroundMonitoringService`, `ForegroundMonitoringServiceController` | `androidMain` |
+| 通知許可ユースケース | `NotificationPermissionUseCase` | `commonMain` |
+| Android 実装 | `NetworkConnectivityImpl`, `NetworkNotifierImpl`, `NotificationPermissionRepositoryImpl`, `ForegroundMonitoringService`, `ForegroundMonitoringServiceController` | `androidMain` |
 | iOS 実装 | `NetworkConnectivityImpl`, `NetworkNotifierImpl`, `BackgroundMonitoringServiceImpl` | `iosMain` |
 
 ### Presenter パターンによる責務分離
@@ -50,6 +53,14 @@ Android 7以降、バックグラウンドアプリへの `CONNECTIVITY_CHANGE` 
 
 `ForegroundMonitoringServiceController` は `Context` を使って FGS を起動・停止する薄いラッパーであり、`BackgroundMonitoringService` インターフェースを実装する。
 
+### 通知権限の責務分離
+
+通知権限の状態判定は `NotificationPermissionUseCase` に分離する。UseCase は `NotificationPermissionRepository` から権限状態を取得し、必要に応じて `NotificationPermissionPresenter` 経由で UI に権限要求や Snackbar 表示を依頼する。
+
+`NotificationPermissionRepository` は suspend API とし、Platform ごとの永続化・OS 権限確認を実装に閉じ込める。Android では `POST_NOTIFICATIONS` の許可状態、`NotificationManagerCompat.areNotificationsEnabled()`、過去に権限要求したかどうかを DataStore Preferences で管理する。
+
+`NetworkViewModel` は `NotificationPermissionPresenter` を実装し、監視開始時に `NotificationPermissionUseCase.isMonitoringStartable()` を `viewModelScope` から呼び出す。権限ダイアログの結果は UI 操作の入力として `updateNotificationPermission(isGranted)` から UseCase に渡す。
+
 ## クラス図
 
 ```plantuml
@@ -66,6 +77,11 @@ package "commonMain" #DDEEFF {
         +displayNotification()
     }
 
+    interface NotificationPermissionPresenter {
+        +requestNotificationPermission()
+        +showNotificationPermissionRequired()
+    }
+
     interface NetworkStatusPresenter {
         +onNetworkStatusUpdated(status: Result<NetworkStatus>)
     }
@@ -75,9 +91,20 @@ package "commonMain" #DDEEFF {
         +stop()
     }
 
+    interface NotificationPermissionRepository {
+        +getStatus(): NotificationPermissionStatus
+        +recordRequested()
+    }
+
     class NetworkUseCase {
         -networkConnectivity: NetworkConnectivity
         +observe(notificationPresenter?, statusPresenter?)
+    }
+
+    class NotificationPermissionUseCase {
+        -notificationPermissionRepository: NotificationPermissionRepository
+        +isMonitoringStartable(presenter)
+        +updateNotificationPermission(isGranted, presenter)
     }
 
     class NetworkMonitor {
@@ -97,6 +124,8 @@ package "commonMain" #DDEEFF {
     NetworkUseCase --> NetworkConnectivity
     NetworkUseCase ..> NetworkNotificationPresenter
     NetworkUseCase ..> NetworkStatusPresenter
+    NotificationPermissionUseCase --> NotificationPermissionRepository
+    NotificationPermissionUseCase ..> NotificationPermissionPresenter
     NetworkMonitor ..|> NetworkNotificationPresenter
     NetworkMonitor ..|> NetworkStatusPresenter
     NetworkMonitor --> NetworkUseCase
@@ -106,11 +135,16 @@ package "commonMain" #DDEEFF {
 package "presentation" #E8E8FF {
     class NetworkViewModel {
         -networkMonitor: NetworkMonitor
+        -notificationPermissionUseCase: NotificationPermissionUseCase
+        +uiEffect: SharedFlow<NetworkUiEffect>
         +observeNetworkStatus()
+        +updateNotificationPermission(isGranted)
         +stopObserveNetworkStatus()
     }
 
+    NetworkViewModel ..|> NotificationPermissionPresenter
     NetworkViewModel --> NetworkMonitor
+    NetworkViewModel --> NotificationPermissionUseCase
 }
 
 package "androidMain" #DDFFDD {
@@ -122,6 +156,13 @@ package "androidMain" #DDFFDD {
     class NetworkNotifierImpl {
         -context: Context
         +notifyWifiToMobile()
+    }
+
+    class NotificationPermissionRepositoryImpl {
+        -context: Context
+        -dataStore: DataStore<Preferences>
+        +getStatus(): NotificationPermissionStatus
+        +recordRequested()
     }
 
     class ForegroundMonitoringService {
@@ -137,6 +178,7 @@ package "androidMain" #DDFFDD {
     }
 
     NetworkConnectivityImpl ..|> NetworkConnectivity
+    NotificationPermissionRepositoryImpl ..|> NotificationPermissionRepository
     NetworkMonitor --> NetworkNotifierImpl
     ForegroundMonitoringService --> NetworkMonitor
     ForegroundMonitoringServiceController ..|> BackgroundMonitoringService
@@ -174,6 +216,10 @@ package "iosMain" #FFF3DD {
 
 1. **通知パーミッション（Android 13+ / API 33+）**
    - `POST_NOTIFICATIONS` 権限の許可はバックグラウンドでの通知表示に必要ですが、Foreground Service (FGS) 自体の起動・動作自体は通知権限がなくても実行可能です（その場合、通知は表示されません）。ただし、ユーザーにサービスの稼働を示すために、アプリ起動時または監視機能の有効化時に権限要求ダイアログを表示することが推奨されます。
+   - 本実装ではアプリ起動直後には権限要求せず、監視開始時に `NotificationPermissionUseCase` が `NotificationPermissionStatus` を判定する。
+   - `Requestable` の場合は `NotificationPermissionPresenter.requestNotificationPermission()` を呼び、`NetworkViewModel` が `NetworkUiEffect.RequestNotificationPermission` を emit する。Activity はこの effect を受けて permission launcher を起動する。
+   - `RequiredButNotGranted` の場合、または権限要求結果が拒否だった場合は `NotificationPermissionPresenter.showNotificationPermissionRequired()` を呼び、Snackbar で通知許可が必要なことを表示する。
+   - 過去に権限要求したかどうかは `NotificationPermissionRepositoryImpl` が DataStore Preferences に保存する。これにより初回の `Requestable` と、過去拒否済みの `RequiredButNotGranted` を区別する。
 
 2. **Foreground Service Type の指定（Android 14+ / API 34+）**
    - Foreground Service の起動にあたり、マニフェストおよびコード内での `foregroundServiceType` の明示的な指定が必須。

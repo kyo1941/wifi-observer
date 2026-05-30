@@ -14,14 +14,19 @@ shared/
 │   ├── commonMain/kotlin/com/example/wifi_observer/
 │   │   ├── NetworkMonitor.kt (監視開始・停止、Presenter実装、UI状態保持のFacade)
 │   │   ├── NetworkUseCase.kt (★状態遷移の検知・Presenter呼び出しのコアビジネスロジック)
+│   │   ├── NotificationPermissionUseCase.kt (通知許可状態の判定・UI要求)
 │   │   ├── model/
-│   │   │   └── NetworkStatus.kt (WiFi/Mobile定義)
+│   │   │   ├── NetworkStatus.kt (WiFi/Mobile定義)
+│   │   │   └── NotificationPermissionStatus.kt (通知許可状態)
 │   │   ├── platform/interfaces/
 │   │   │   ├── NetworkConnectivity.kt (接続状態の観測I/F)
+│   │   │   ├── NotificationPermissionRepository.kt (通知許可状態Repository)
 │   │   │   ├── NetworkNotificationPresenter.kt (通知発火I/F)
 │   │   │   └── BackgroundMonitoringService.kt (監視開始・停止I/F)
 │   │   ├── viewmodel/
 │   │   │   ├── NetworkViewModel.kt (NetworkMonitor.status を UI 状態へ変換)
+│   │   │   ├── NetworkUiEffect.kt (権限要求・Snackbar 等の単発UIイベント)
+│   │   │   ├── NotificationPermissionPresenter.kt (通知許可UI要求I/F)
 │   │   │   ├── NetworkStatusPresenter.kt (UI更新I/F)
 │   │   │   └── NetworkUiStatus.kt (UIモデル)
 │   │
@@ -29,6 +34,7 @@ shared/
 │   │   └── platform/
 │   │       ├── NetworkConnectivityImpl.kt (ConnectivityManager利用)
 │   │       ├── NetworkNotifierImpl.kt (NotificationManager利用)
+│   │       ├── NotificationPermissionRepositoryImpl.kt (POST_NOTIFICATIONS と DataStore 利用)
 │   │       ├── ForegroundMonitoringService.kt (FGS wrapper・監視Job管理)
 │   │       └── ForegroundMonitoringServiceController.kt (BackgroundMonitoringService実装)
 │   │
@@ -48,10 +54,12 @@ iOS では、バックグラウンドでのリアルタイム監視が制限さ�
 この制約を解消するため、将来的な KMP 移行時には以下の永続化機構を組み込みます。
 
 ### 永続化ライブラリの利用設計
-KMP 共通モジュールでキーバリュー型永続化を扱うために、**[multiplatform-settings](https://github.com/russhwolf/multiplatform-settings)** を導入します。
+Android では、権限要求済みフラグの保存に Jetpack DataStore Preferences を利用します。DataStore は suspend / Flow ベースで扱えるため、Repository と UseCase の境界も suspend API として定義します。
 
-- **Android 側**: `SharedPreferences` にマッピング
-- **iOS 側**: `NSUserDefaults` にマッピング
+KMP 共通モジュールでキーバリュー型永続化を扱う場合は、**[multiplatform-settings](https://github.com/russhwolf/multiplatform-settings)** または KMP 対応 DataStore Preferences の導入を検討します。
+
+- **Android 側**: DataStore Preferences にマッピング
+- **iOS 側**: `NSUserDefaults` 等にマッピング
 
 ### 永続化を用いた状態検知フロー（共通ロジック化）
 
@@ -145,6 +153,9 @@ class AppContainer(context: Context) {
         )
     )
     private val networkNotifier = NetworkNotifierImpl(context)
+    private val notificationPermissionUseCase = NotificationPermissionUseCase(
+        notificationPermissionRepository = NotificationPermissionRepositoryImpl(context)
+    )
     private val backgroundMonitoringService = ForegroundMonitoringServiceController(context)
 
     val networkMonitor = NetworkMonitor(
@@ -183,12 +194,13 @@ struct WifiObserverApp: App {
   - [x] 設計書を Presenter パターン（2つのPresenterインターフェース）に基づき更新
   - [x] `NetworkNotificationPresenter` / `NetworkStatusPresenter` / `BackgroundMonitoringService` の Android 定義
   - [x] `NetworkMonitor`（`NetworkNotificationPresenter` / `NetworkStatusPresenter` 実装）による通知発火・UI状態更新の完了
+  - [x] `NotificationPermissionUseCase` / `NotificationPermissionRepository` による通知許可状態判定と DataStore 永続化の完了
   - [x] `ForegroundMonitoringService` による FGS 起動、監視 coroutine の `Job` 管理、`POST_NOTIFICATIONS` 権限対応の完了
   - [x] `NetworkViewModel` による `NetworkMonitor.status` の UI 状態変換の完了
 - [ ] **フェーズ 2: 共有モジュール (shared) の新設とコード抽出**
   - [ ] `shared` マルチプラットフォームモジュールを Gradle に作成
-  - [ ] `NetworkStatus`, `NetworkConnectivity`, `NetworkNotificationPresenter`, `NetworkStatusPresenter`, `BackgroundMonitoringService` を `commonMain` に移動
-  - [ ] `NetworkUseCase`, `NetworkMonitor`, `NetworkViewModel` を `commonMain` に移動
+  - [ ] `NetworkStatus`, `NotificationPermissionStatus`, `NetworkConnectivity`, `NotificationPermissionRepository`, `NetworkNotificationPresenter`, `NotificationPermissionPresenter`, `NetworkStatusPresenter`, `BackgroundMonitoringService` を `commonMain` に移動
+  - [ ] `NetworkUseCase`, `NotificationPermissionUseCase`, `NetworkMonitor`, `NetworkViewModel` を `commonMain` に移動
 - [ ] **フェーズ 3: 状態永続化の共通化**
   - [ ] `multiplatform-settings` の依存追加
   - [ ] `NetworkUseCase.observe()` の `previousStatus` 初期値を `Settings` ストアから復元する形に拡張

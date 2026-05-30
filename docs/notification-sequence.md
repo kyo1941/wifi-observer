@@ -13,6 +13,8 @@ skinparam roundcorner 5
 
 actor ユーザー
 participant "NetworkViewModel" as ViewModel #E8E8FF
+participant "NotificationPermissionUseCase" as PermissionUseCase #DDEEFF
+participant "NotificationPermissionRepositoryImpl" as PermissionRepo #AADDAA
 participant "NetworkMonitor" as Monitor #DDEEFF
 participant "ForegroundMonitoringServiceController" as Controller #AADDAA
 participant "ForegroundMonitoringService" as Service #AADDAA
@@ -23,6 +25,24 @@ participant "NetworkNotifierImpl" as Notifier #AADDAA
 participant "NotificationManager\n(Android OS)" as NotifOS #CCCCCC
 
 ユーザー -> ViewModel: 監視開始ボタンをタップ
+ViewModel -> PermissionUseCase: isMonitoringStartable(presenter=this)
+PermissionUseCase -> PermissionRepo: getStatus()
+
+alt Requestable
+    PermissionUseCase -> ViewModel: requestNotificationPermission()
+    ViewModel --> ユーザー: 通知権限ダイアログを表示
+    ユーザー --> ViewModel: 許可
+    ViewModel -> PermissionUseCase: updateNotificationPermission(isGranted=true,\npresenter=this)
+    PermissionUseCase -> PermissionRepo: recordRequested()
+    PermissionUseCase -> PermissionRepo: getStatus()
+else RequiredButNotGranted または拒否
+    PermissionUseCase -> ViewModel: showNotificationPermissionRequired()
+    ViewModel --> ユーザー: Snackbar\n通知許可が必要
+    note over ViewModel: 監視は開始しない
+else Granted / NotRequired
+end
+
+note over ViewModel, Monitor: 権限が許可済み、または権限不要の場合
 ViewModel -> Monitor: start()
 Monitor -> Controller: start()
 Controller -> Service: startForegroundService()\n(API 25以下は startService())
