@@ -88,20 +88,19 @@ class NetworkViewModel(
 
     private fun NetworkMonitoringStatus.toUiStatus(): NetworkUiStatus =
         when (this) {
-            is NetworkMonitoringStatus.Available -> status.toUiStatus()
-            is NetworkMonitoringStatus.Failed ->
-                NetworkUiStatus.Error("ネットワーク状態の取得に失敗しました")
-        }
+            is NetworkMonitoringStatus.Available ->
+                when (val networkStatus = status) {
+                    is NetworkStatus.Connected ->
+                        when (networkStatus.type) {
+                            NetworkStatus.NetworkType.Wifi -> NetworkUiStatus.Wifi
+                            NetworkStatus.NetworkType.Mobile -> NetworkUiStatus.Mobile
+                            NetworkStatus.NetworkType.Other -> NetworkUiStatus.Other
+                        }
 
-    private fun NetworkStatus.toUiStatus(): NetworkUiStatus =
-        when (this) {
-            is NetworkStatus.Connected ->
-                when (type) {
-                    NetworkStatus.NetworkType.Wifi -> NetworkUiStatus.Wifi
-                    NetworkStatus.NetworkType.Mobile -> NetworkUiStatus.Mobile
-                    NetworkStatus.NetworkType.Other -> NetworkUiStatus.Other
+                    is NetworkStatus.NotConnected -> NetworkUiStatus.NotConnected
                 }
 
-            is NetworkStatus.NotConnected -> NetworkUiStatus.NotConnected
+            is NetworkMonitoringStatus.Failed ->
+                NetworkUiStatus.Error("ネットワーク状態の取得に失敗しました")
         }
 }
