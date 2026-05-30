@@ -1,5 +1,6 @@
 package com.example.wifi_observer
 
+import com.example.wifi_observer.model.NetworkMonitoringStatus
 import com.example.wifi_observer.model.NetworkStatus
 import com.example.wifi_observer.platform.interfaces.NetworkConnectivity
 import com.example.wifi_observer.platform.interfaces.NetworkNotificationPresenter
@@ -26,7 +27,17 @@ class NetworkUseCase(
                 }
                 previousStatus = current
             }
-            statusPresenter.onNetworkStatusUpdated(result)
+            statusPresenter.onNetworkStatusUpdated(result.toMonitoringStatus())
         }
     }
+
+    private fun Result<NetworkStatus>.toMonitoringStatus(): NetworkMonitoringStatus =
+        fold(
+            onSuccess = { status ->
+                NetworkMonitoringStatus.Available(status)
+            },
+            onFailure = {
+                NetworkMonitoringStatus.Failed
+            },
+        )
 }

@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.wifi_observer.NetworkMonitor
 import com.example.wifi_observer.NotificationPermissionUseCase
+import com.example.wifi_observer.model.NetworkMonitoringStatus
 import com.example.wifi_observer.model.NetworkStatus
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -85,23 +86,22 @@ class NetworkViewModel(
         }
     }
 
-    private fun Result<NetworkStatus>.toUiStatus(): NetworkUiStatus =
-        fold(
-            onSuccess = { status ->
-                when (status) {
-                    is NetworkStatus.Connected ->
-                        when (status.type) {
-                            NetworkStatus.NetworkType.Wifi -> NetworkUiStatus.Wifi
-                            NetworkStatus.NetworkType.Mobile -> NetworkUiStatus.Mobile
-                            NetworkStatus.NetworkType.Other -> NetworkUiStatus.Other
-                        }
-
-                    is NetworkStatus.NotConnected -> NetworkUiStatus.NotConnected
-                }
-            },
-            onFailure = {
-                // TODO: Snackbar で表示して再試行できるようにする
+    private fun NetworkMonitoringStatus.toUiStatus(): NetworkUiStatus =
+        when (this) {
+            is NetworkMonitoringStatus.Available -> status.toUiStatus()
+            is NetworkMonitoringStatus.Failed ->
                 NetworkUiStatus.Error("ネットワーク状態の取得に失敗しました")
-            },
-        )
+        }
+
+    private fun NetworkStatus.toUiStatus(): NetworkUiStatus =
+        when (this) {
+            is NetworkStatus.Connected ->
+                when (type) {
+                    NetworkStatus.NetworkType.Wifi -> NetworkUiStatus.Wifi
+                    NetworkStatus.NetworkType.Mobile -> NetworkUiStatus.Mobile
+                    NetworkStatus.NetworkType.Other -> NetworkUiStatus.Other
+                }
+
+            is NetworkStatus.NotConnected -> NetworkUiStatus.NotConnected
+        }
 }

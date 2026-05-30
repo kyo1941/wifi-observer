@@ -1,6 +1,6 @@
 package com.example.wifi_observer
 
-import com.example.wifi_observer.model.NetworkStatus
+import com.example.wifi_observer.model.NetworkMonitoringStatus
 import com.example.wifi_observer.platform.NetworkNotifierImpl
 import com.example.wifi_observer.platform.interfaces.BackgroundMonitoringService
 import com.example.wifi_observer.platform.interfaces.NetworkNotificationPresenter
@@ -15,9 +15,8 @@ class NetworkMonitor(
     private val backgroundMonitoringService: BackgroundMonitoringService,
 ) : NetworkNotificationPresenter,
     NetworkStatusPresenter {
-    // FIXME: ResultはUI層に持ち込まずUseCase内でハンドリングする。また、Result の nullable も意図がちぐはぐなので修正する。
-    private val _status = MutableStateFlow<Result<NetworkStatus>?>(null)
-    val status: StateFlow<Result<NetworkStatus>?> = _status.asStateFlow()
+    private val _status = MutableStateFlow<NetworkMonitoringStatus?>(null)
+    val status: StateFlow<NetworkMonitoringStatus?> = _status.asStateFlow()
 
     fun start() = backgroundMonitoringService.start()
 
@@ -34,7 +33,7 @@ class NetworkMonitor(
         networkNotifier.notifyWifiToMobile()
     }
 
-    override fun onNetworkStatusUpdated(status: Result<NetworkStatus>) {
+    override fun onNetworkStatusUpdated(status: NetworkMonitoringStatus) {
         _status.value = status
     }
 }
