@@ -9,8 +9,8 @@ class NetworkUseCase(
     private val networkConnectivity: NetworkConnectivity,
 ) {
     suspend fun observe(
-        notificationPresenter: NetworkNotificationPresenter? = null,
-        statusPresenter: NetworkStatusPresenter? = null,
+        notificationPresenter: NetworkNotificationPresenter,
+        statusPresenter: NetworkStatusPresenter,
     ) {
         var previousStatus: NetworkStatus? = null
         networkConnectivity.observeNetworkStatus().collect { result ->
@@ -22,11 +22,11 @@ class NetworkUseCase(
                     current is NetworkStatus.Connected &&
                     current.type == NetworkStatus.NetworkType.Mobile
                 ) {
-                    notificationPresenter?.displayNotification()
+                    notificationPresenter.displayNotification()
                 }
                 previousStatus = current
             }
-            statusPresenter?.onNetworkStatusUpdated(result)
+            statusPresenter.onNetworkStatusUpdated(result)
         }
     }
 }
