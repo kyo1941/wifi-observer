@@ -28,11 +28,11 @@ class NetworkViewModel(
     private val notificationPermissionUseCase: NotificationPermissionUseCase,
 ) : ViewModel(),
     NotificationPermissionPresenter {
-    val uiState: StateFlow<UiState> = networkMonitor.status
-        .map { status ->
-            status?.let { UiState.Ready(it.toUiStatus()) } ?: UiState.Init
-        }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), UiState.Init)
+    val uiState: StateFlow<UiState> =
+        networkMonitor.status
+            .map { status ->
+                status?.let { UiState.Ready(it.toUiStatus()) } ?: UiState.Init
+            }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), UiState.Init)
 
     private val _uiEffect = MutableSharedFlow<NetworkUiEffect>()
     val uiEffect: SharedFlow<NetworkUiEffect> = _uiEffect.asSharedFlow()

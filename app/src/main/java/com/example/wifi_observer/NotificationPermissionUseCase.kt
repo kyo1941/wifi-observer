@@ -7,12 +7,11 @@ import com.example.wifi_observer.viewmodel.NotificationPermissionPresenter
 class NotificationPermissionUseCase(
     private val notificationPermissionRepository: NotificationPermissionRepository,
 ) {
-    suspend fun isMonitoringStartable(
-        presenter: NotificationPermissionPresenter,
-    ): Boolean =
+    suspend fun isMonitoringStartable(presenter: NotificationPermissionPresenter): Boolean =
         when (notificationPermissionRepository.getStatus()) {
             is NotificationPermissionStatus.NotRequired,
-            is NotificationPermissionStatus.Granted -> true
+            is NotificationPermissionStatus.Granted,
+            -> true
 
             is NotificationPermissionStatus.Requestable -> {
                 presenter.requestNotificationPermission()
@@ -38,10 +37,12 @@ class NotificationPermissionUseCase(
 
         return when (notificationPermissionRepository.getStatus()) {
             is NotificationPermissionStatus.NotRequired,
-            is NotificationPermissionStatus.Granted -> true
+            is NotificationPermissionStatus.Granted,
+            -> true
 
             is NotificationPermissionStatus.Requestable,
-            is NotificationPermissionStatus.RequiredButNotGranted -> {
+            is NotificationPermissionStatus.RequiredButNotGranted,
+            -> {
                 presenter.showNotificationPermissionRequired()
                 false
             }
