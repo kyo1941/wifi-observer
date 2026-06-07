@@ -45,7 +45,7 @@ Android 7以降、バックグラウンドアプリへの `CONNECTIVITY_CHANGE` 
 | `NetworkNotificationPresenter` | `NetworkMonitor` | Application スコープの DI コンテナと同じ |
 | `NetworkStatusPresenter` | `NetworkMonitor` | Application スコープの DI コンテナと同じ |
 
-`NetworkUseCase` は `suspend observe(notificationPresenter?, statusPresenter?)` を提供し、呼び出し元が起動した coroutine の中で監視ループを実行する。UseCase 自身は coroutine を起動せず、`Job` も返さない。これにより、UseCase は状態値や実行制御を直接返さず、Presenter 経由の出力だけを担当する。
+`NetworkUseCase` は `suspend observe(notificationPresenter, statusPresenter)` を提供し、呼び出し元が起動した coroutine の中で監視ループを実行する。UseCase 自身は coroutine を起動せず、`Job` も返さない。これにより、UseCase は状態値や実行制御を直接返さず、Presenter 経由の出力だけを担当する。
 
 - **ForegroundMonitoringService**: `serviceScope.launch { networkMonitor.observe() }` で監視を開始する。`observeJob` を保持し、`onStartCommand()` の再配送や start の再実行で監視 callback が多重登録されないようにする。
 - **NetworkMonitor**: `NetworkNotificationPresenter` / `NetworkStatusPresenter` を実装し、UseCase からの通知発火要求を `NetworkNotifierImpl` に委譲しつつ、UI 用の `StateFlow` を更新する。
@@ -83,7 +83,7 @@ package "commonMain" #DDEEFF {
     }
 
     interface NetworkStatusPresenter {
-        +onNetworkStatusUpdated(status: Result<NetworkStatus>)
+        +onNetworkStatusUpdated(status: NetworkMonitoringStatus)
     }
 
     interface BackgroundMonitoringService {
@@ -98,7 +98,7 @@ package "commonMain" #DDEEFF {
 
     class NetworkUseCase {
         -networkConnectivity: NetworkConnectivity
-        +observe(notificationPresenter?, statusPresenter?)
+        +observe(notificationPresenter, statusPresenter)
     }
 
     class NotificationPermissionUseCase {
@@ -110,7 +110,8 @@ package "commonMain" #DDEEFF {
     class NetworkMonitor {
         -networkUseCase: NetworkUseCase
         -backgroundMonitoringService: BackgroundMonitoringService
-        +status: StateFlow<Result<NetworkStatus>?>
+        -isMonitoring: Boolean
+        +status: StateFlow<NetworkMonitoringStatus?>
         +start()
         +stop()
         +observe()
@@ -119,6 +120,11 @@ package "commonMain" #DDEEFF {
     class NetworkStatus <<sealed>> {
         +Connected(type: NetworkType)
         +NotConnected
+    }
+
+    class NetworkMonitoringStatus <<sealed>> {
+        +Available(status: NetworkStatus)
+        +Failed
     }
 
     NetworkUseCase --> NetworkConnectivity
@@ -275,8 +281,8 @@ WiFi→モバイル検知時の通知は別チャンネルで `IMPORTANCE_HIGH` 
 
 ```kotlin
 suspend fun observe(
-    notificationPresenter: NetworkNotificationPresenter? = null,
-    statusPresenter: NetworkStatusPresenter? = null,
+    notificationPresenter: NetworkNotificationPresenter,
+    statusPresenter: NetworkStatusPresenter,
 ) {
     var previousStatus: NetworkStatus? = null
     networkConnectivity.observeNetworkStatus().collect { result ->
@@ -288,13 +294,19 @@ suspend fun observe(
                 current is NetworkStatus.Connected &&
                 current.type == NetworkStatus.NetworkType.Mobile
             ) {
-                notificationPresenter?.displayNotification()
+                notificationPresenter.displayNotification()
             }
             previousStatus = current
         }
-        statusPresenter?.onNetworkStatusUpdated(result)
+        statusPresenter.onNetworkStatusUpdated(result.toMonitoringStatus())
     }
 }
+
+private fun Result<NetworkStatus>.toMonitoringStatus(): NetworkMonitoringStatus =
+    fold(
+        onSuccess = { status -> NetworkMonitoringStatus.Available(status) },
+        onFailure = { NetworkMonitoringStatus.Failed },
+    )
 ```
 
 監視 coroutine の `Job` は UseCase ではなく Platform 側が保持する。Android では FGS の `onStartCommand()` が複数回呼ばれる可能性があるため、`observeJob` で多重起動を防ぐ。

@@ -17,6 +17,7 @@ shared/
 │   │   ├── NotificationPermissionUseCase.kt (通知許可状態の判定・UI要求)
 │   │   ├── model/
 │   │   │   ├── NetworkStatus.kt (WiFi/Mobile定義)
+│   │   │   ├── NetworkMonitoringStatus.kt (監視結果のUI更新用モデル)
 │   │   │   └── NotificationPermissionStatus.kt (通知許可状態)
 │   │   ├── platform/interfaces/
 │   │   │   ├── NetworkConnectivity.kt (接続状態の観測I/F)
@@ -78,8 +79,8 @@ class NetworkUseCase(
     }
 
     suspend fun observe(
-        notificationPresenter: NetworkNotificationPresenter? = null,
-        statusPresenter: NetworkStatusPresenter? = null,
+        notificationPresenter: NetworkNotificationPresenter,
+        statusPresenter: NetworkStatusPresenter,
     ) {
         var previousStatus: NetworkStatus? = getLastKnownStatus()  // 永続化から復元
 
@@ -92,16 +93,22 @@ class NetworkUseCase(
                 current is NetworkStatus.Connected &&
                 current.type == NetworkStatus.NetworkType.Mobile
             ) {
-                notificationPresenter?.displayNotification()
+                notificationPresenter.displayNotification()
             }
 
             // 永続化ストアに現在の接続情報を保存
             saveStatus(current)
             previousStatus = current
 
-            statusPresenter?.onNetworkStatusUpdated(result)
+            statusPresenter.onNetworkStatusUpdated(result.toMonitoringStatus())
         }
     }
+
+    private fun Result<NetworkStatus>.toMonitoringStatus(): NetworkMonitoringStatus =
+        fold(
+            onSuccess = { status -> NetworkMonitoringStatus.Available(status) },
+            onFailure = { NetworkMonitoringStatus.Failed },
+        )
 
     private fun getLastKnownStatus(): NetworkStatus? {
         val typeString = settings.getStringOrNull(KEY_LAST_KNOWN_STATUS) ?: return null
@@ -199,7 +206,7 @@ struct WifiObserverApp: App {
   - [x] `NetworkViewModel` による `NetworkMonitor.status` の UI 状態変換の完了
 - [ ] **フェーズ 2: 共有モジュール (shared) の新設とコード抽出**
   - [ ] `shared` マルチプラットフォームモジュールを Gradle に作成
-  - [ ] `NetworkStatus`, `NotificationPermissionStatus`, `NetworkConnectivity`, `NotificationPermissionRepository`, `NetworkNotificationPresenter`, `NotificationPermissionPresenter`, `NetworkStatusPresenter`, `BackgroundMonitoringService` を `commonMain` に移動
+  - [ ] `NetworkStatus`, `NetworkMonitoringStatus`, `NotificationPermissionStatus`, `NetworkConnectivity`, `NotificationPermissionRepository`, `NetworkNotificationPresenter`, `NotificationPermissionPresenter`, `NetworkStatusPresenter`, `BackgroundMonitoringService` を `commonMain` に移動
   - [ ] `NetworkUseCase`, `NotificationPermissionUseCase`, `NetworkMonitor`, `NetworkViewModel` を `commonMain` に移動
 - [ ] **フェーズ 3: 状態永続化の共通化**
   - [ ] `multiplatform-settings` の依存追加
