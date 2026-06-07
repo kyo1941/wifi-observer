@@ -1,5 +1,6 @@
 package com.example.wifi_observer
 
+import com.example.wifi_observer.model.NotificationPermissionRequestResult
 import com.example.wifi_observer.model.NotificationPermissionStatus
 import com.example.wifi_observer.platform.interfaces.NotificationPermissionRepository
 import com.example.wifi_observer.viewmodel.NotificationPermissionPresenter
@@ -25,14 +26,24 @@ class NotificationPermissionUseCase(
         }
 
     suspend fun updateNotificationPermission(
-        isGranted: Boolean,
+        result: NotificationPermissionRequestResult,
         presenter: NotificationPermissionPresenter,
     ): Boolean {
-        notificationPermissionRepository.recordRequested()
+        when (result) {
+            is NotificationPermissionRequestResult.Dismissed -> {
+                presenter.showNotificationPermissionRequired()
+                return false
+            }
 
-        if (!isGranted) {
-            presenter.showNotificationPermissionRequired()
-            return false
+            is NotificationPermissionRequestResult.Denied -> {
+                notificationPermissionRepository.recordPermissionDecision()
+                presenter.showNotificationPermissionRequired()
+                return false
+            }
+
+            is NotificationPermissionRequestResult.Granted -> {
+                notificationPermissionRepository.recordPermissionDecision()
+            }
         }
 
         return when (notificationPermissionRepository.getStatus()) {

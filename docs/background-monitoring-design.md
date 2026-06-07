@@ -59,7 +59,7 @@ Android 7以降、バックグラウンドアプリへの `CONNECTIVITY_CHANGE` 
 
 `NotificationPermissionRepository` は suspend API とし、Platform ごとの永続化・OS 権限確認を実装に閉じ込める。Android では `POST_NOTIFICATIONS` の許可状態、`NotificationManagerCompat.areNotificationsEnabled()`、過去に権限要求したかどうかを DataStore Preferences で管理する。
 
-`NetworkViewModel` は `NotificationPermissionPresenter` を実装し、監視開始時に `NotificationPermissionUseCase.isMonitoringStartable()` を `viewModelScope` から呼び出す。権限ダイアログの結果は UI 操作の入力として `updateNotificationPermission(isGranted)` から UseCase に渡す。
+`NetworkViewModel` は `NotificationPermissionPresenter` を実装し、監視開始時に `NotificationPermissionUseCase.isMonitoringStartable()` を `viewModelScope` から呼び出す。権限ダイアログの結果は UI 操作の入力として `NotificationPermissionRequestResult` に変換し、`updateNotificationPermission(result)` から UseCase に渡す。
 
 ## クラス図
 
@@ -93,7 +93,7 @@ package "commonMain" #DDEEFF {
 
     interface NotificationPermissionRepository {
         +getStatus(): NotificationPermissionStatus
-        +recordRequested()
+        +recordPermissionDecision()
     }
 
     class NetworkUseCase {
@@ -104,7 +104,7 @@ package "commonMain" #DDEEFF {
     class NotificationPermissionUseCase {
         -notificationPermissionRepository: NotificationPermissionRepository
         +isMonitoringStartable(presenter)
-        +updateNotificationPermission(isGranted, presenter)
+        +updateNotificationPermission(result, presenter)
     }
 
     class NetworkMonitor {
@@ -144,7 +144,7 @@ package "presentation" #E8E8FF {
         -notificationPermissionUseCase: NotificationPermissionUseCase
         +uiEffect: SharedFlow<NetworkUiEffect>
         +observeNetworkStatus()
-        +updateNotificationPermission(isGranted)
+        +updateNotificationPermission(result)
         +stopObserveNetworkStatus()
     }
 
@@ -168,7 +168,7 @@ package "androidMain" #DDFFDD {
         -context: Context
         -dataStore: DataStore<Preferences>
         +getStatus(): NotificationPermissionStatus
-        +recordRequested()
+        +recordPermissionDecision()
     }
 
     class ForegroundMonitoringService {

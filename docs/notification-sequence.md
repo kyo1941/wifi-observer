@@ -32,8 +32,8 @@ alt Requestable
     PermissionUseCase -> ViewModel: requestNotificationPermission()
     ViewModel --> ユーザー: 通知権限ダイアログを表示
     ユーザー --> ViewModel: 許可
-    ViewModel -> PermissionUseCase: updateNotificationPermission(isGranted=true,\npresenter=this)
-    PermissionUseCase -> PermissionRepo: recordRequested()
+    ViewModel -> PermissionUseCase: updateNotificationPermission(result=Granted,\npresenter=this)
+    PermissionUseCase -> PermissionRepo: recordPermissionDecision()
     PermissionUseCase -> PermissionRepo: getStatus()
 else RequiredButNotGranted または拒否
     PermissionUseCase -> ViewModel: showNotificationPermissionRequired()

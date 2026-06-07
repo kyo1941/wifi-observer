@@ -18,6 +18,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.wifi_observer.platform.notificationPermissionRequestResult
 import com.example.wifi_observer.ui.theme.WifiobserverTheme
 import com.example.wifi_observer.viewmodel.NetworkUiEffect
 import com.example.wifi_observer.viewmodel.NetworkViewModel
@@ -44,7 +45,16 @@ class MainActivity : ComponentActivity() {
                 rememberLauncherForActivityResult(
                     ActivityResultContracts.RequestPermission(),
                 ) { isGranted ->
-                    networkViewModel.updateNotificationPermission(isGranted)
+                    networkViewModel.updateNotificationPermission(
+                        notificationPermissionRequestResult(
+                            isGranted = isGranted,
+                            shouldShowRationale =
+                                Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                                    shouldShowRequestPermissionRationale(
+                                        Manifest.permission.POST_NOTIFICATIONS,
+                                    ),
+                        ),
+                    )
                 }
 
             LaunchedEffect(networkViewModel) {

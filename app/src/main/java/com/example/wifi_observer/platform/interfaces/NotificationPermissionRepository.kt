@@ -5,5 +5,5 @@ import com.example.wifi_observer.model.NotificationPermissionStatus
 interface NotificationPermissionRepository {
     suspend fun getStatus(): NotificationPermissionStatus
 
-    suspend fun recordRequested()
+    suspend fun recordPermissionDecision()
 }

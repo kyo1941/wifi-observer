@@ -13,8 +13,10 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.preferencesDataStore
 import com.example.wifi_observer.model.NotificationPermissionStatus
 import com.example.wifi_observer.platform.interfaces.NotificationPermissionRepository
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.withContext
 
 private val Context.notificationPermissionDataStore: DataStore<Preferences> by preferencesDataStore(
     name = "notification_permission",
@@ -30,11 +32,11 @@ class NotificationPermissionRepositoryImpl(
     private val appContext = context.applicationContext
     private val dataStore = appContext.notificationPermissionDataStore
 
-    override suspend fun getStatus(): NotificationPermissionStatus {
+    override suspend fun getStatus(): NotificationPermissionStatus = withContext(Dispatchers.IO) {
         val notificationsEnabled = NotificationManagerCompat.from(appContext).areNotificationsEnabled()
 
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
-            return if (notificationsEnabled) {
+            return@withContext if (notificationsEnabled) {
                 NotificationPermissionStatus.NotRequired
             } else {
                 NotificationPermissionStatus.RequiredButNotGranted
@@ -48,23 +50,25 @@ class NotificationPermissionRepositoryImpl(
             ) == PackageManager.PERMISSION_GRANTED
 
         if (permissionGranted) {
-            return if (notificationsEnabled) {
+            return@withContext if (notificationsEnabled) {
                 NotificationPermissionStatus.Granted
             } else {
                 NotificationPermissionStatus.RequiredButNotGranted
             }
         }
 
-        return if (hasRequestedPermission()) {
+        if (hasRequestedPermission()) {
             NotificationPermissionStatus.RequiredButNotGranted
         } else {
             NotificationPermissionStatus.Requestable
         }
     }
 
-    override suspend fun recordRequested() {
-        dataStore.edit { preferences ->
-            preferences[KEY_PERMISSION_REQUESTED] = true
+    override suspend fun recordPermissionDecision() {
+        withContext(Dispatchers.IO) {
+            dataStore.edit { preferences ->
+                preferences[KEY_PERMISSION_REQUESTED] = true
+            }
         }
     }
 
