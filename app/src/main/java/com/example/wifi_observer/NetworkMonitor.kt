@@ -18,10 +18,17 @@ class NetworkMonitor(
     private val _status = MutableStateFlow<NetworkMonitoringStatus?>(null)
     val status: StateFlow<NetworkMonitoringStatus?> = _status.asStateFlow()
 
-    fun start() = backgroundMonitoringService.start()
+    @Volatile
+    private var isMonitoring = false
+
+    fun start() {
+        backgroundMonitoringService.start()
+        isMonitoring = true
+    }
 
     fun stop() {
         backgroundMonitoringService.stop()
+        isMonitoring = false
         _status.value = null
     }
 
@@ -30,10 +37,14 @@ class NetworkMonitor(
     }
 
     override fun displayNotification() {
-        networkNotifier.notifyWifiToMobile()
+        if (isMonitoring) {
+            networkNotifier.notifyWifiToMobile()
+        }
     }
 
     override fun onNetworkStatusUpdated(status: NetworkMonitoringStatus) {
-        _status.value = status
+        if (isMonitoring) {
+            _status.value = status
+        }
     }
 }
