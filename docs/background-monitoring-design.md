@@ -26,14 +26,40 @@ Android 7以降、バックグラウンドアプリへの `CONNECTIVITY_CHANGE` 
 |----|------|---------------|
 | ビジネスロジック | `NetworkUseCase` | `commonMain` |
 | 監視インターフェース | `NetworkConnectivity` | `commonMain` |
-| 通知インターフェース | `NetworkNotifier` | `commonMain` |
+| 通知許可Repositoryインターフェース | `NotificationPermissionRepository` | `commonMain` |
+| 通知Presenterインターフェース | `NetworkNotificationPresenter` | `commonMain` |
+| 通知許可Presenterインターフェース | `NotificationPermissionPresenter` | `commonMain` |
+| UI更新Presenterインターフェース | `NetworkStatusPresenter` | `commonMain` |
 | バックグラウンド実行インターフェース | `BackgroundMonitoringService` | `commonMain` |
-| Android 実装 | `NetworkConnectivityImpl`, `NetworkNotifierImpl`, `ForegroundMonitoringService` | `androidMain` |
+| 監視Facade | `NetworkMonitor` | `commonMain` |
+| 通知許可ユースケース | `NotificationPermissionUseCase` | `commonMain` |
+| Android 実装 | `NetworkConnectivityImpl`, `NetworkNotifierImpl`, `NotificationPermissionRepositoryImpl`, `ForegroundMonitoringService`, `ForegroundMonitoringServiceController` | `androidMain` |
 | iOS 実装 | `NetworkConnectivityImpl`, `NetworkNotifierImpl`, `BackgroundMonitoringServiceImpl` | `iosMain` |
 
-`NetworkUseCase` は `NetworkConnectivity` と `NetworkNotifier` に依存し、監視ストリームの提供、状態遷移（WiFi → モバイル）の検知、および通知のトリガー処理をストリーム演算子（`onEach`）内で一元的に行います。
-バックグラウンド監視の開始・停止は `NetworkViewModel#observeNetworkStatus()` / `NetworkViewModel#stopObserveNetworkStatus()` から `BackgroundMonitoringService` を介して行います。
-`ForegroundMonitoringService` / `BackgroundMonitoringServiceImpl` は、データソースや通知の仕組みに直接依存せず、`NetworkUseCase` の監視ストリームを単に `collect()` してバックグラウンド実行を維持するだけの「薄いラッパー（殻）」として動作します。
+### Presenter パターンによる責務分離
+
+`NetworkUseCase` は監視結果を直接返さず、Presenter を通じて外側へ通知する。通知と UI 更新の責務は2つの Presenter インターフェースに分離し、`NetworkMonitor` がそれらを実装して状態と副作用の橋渡しを担う。
+
+| インターフェース | 実装者 | ライフサイクル |
+|---|---|---|
+| `NetworkNotificationPresenter` | `NetworkMonitor` | Application スコープの DI コンテナと同じ |
+| `NetworkStatusPresenter` | `NetworkMonitor` | Application スコープの DI コンテナと同じ |
+
+`NetworkUseCase` は `suspend observe(notificationPresenter, statusPresenter)` を提供し、呼び出し元が起動した coroutine の中で監視ループを実行する。UseCase 自身は coroutine を起動せず、`Job` も返さない。これにより、UseCase は状態値や実行制御を直接返さず、Presenter 経由の出力だけを担当する。
+
+- **ForegroundMonitoringService**: `serviceScope.launch { networkMonitor.observe() }` で監視を開始する。`observeJob` を保持し、`onStartCommand()` の再配送や start の再実行で監視 callback が多重登録されないようにする。
+- **NetworkMonitor**: `NetworkNotificationPresenter` / `NetworkStatusPresenter` を実装し、UseCase からの通知発火要求を `NetworkNotifierImpl` に委譲しつつ、UI 用の `StateFlow` を更新する。
+- **NetworkViewModel**: UseCase を直接 observe せず、`NetworkMonitor.status` を UI 状態へ変換する。監視開始・停止は `NetworkMonitor.start()` / `stop()` を呼び、実際の FGS 制御は `BackgroundMonitoringService` に委譲する。
+
+`ForegroundMonitoringServiceController` は `Context` を使って FGS を起動・停止する薄いラッパーであり、`BackgroundMonitoringService` インターフェースを実装する。
+
+### 通知権限の責務分離
+
+通知権限の状態判定は `NotificationPermissionUseCase` に分離する。UseCase は `NotificationPermissionRepository` から権限状態を取得し、必要に応じて `NotificationPermissionPresenter` 経由で UI に権限要求や Snackbar 表示を依頼する。
+
+`NotificationPermissionRepository` は suspend API とし、Platform ごとの永続化・OS 権限確認を実装に閉じ込める。Android では `POST_NOTIFICATIONS` の許可状態、`NotificationManagerCompat.areNotificationsEnabled()`、過去に権限要求したかどうかを DataStore Preferences で管理する。
+
+`NetworkViewModel` は `NotificationPermissionPresenter` を実装し、監視開始時に `NotificationPermissionUseCase.isMonitoringStartable()` を `viewModelScope` から呼び出す。権限ダイアログの結果は UI 操作の入力として `NotificationPermissionRequestResult` に変換し、`updateNotificationPermission(result)` から UseCase に渡す。
 
 ## クラス図
 
@@ -47,8 +73,17 @@ package "commonMain" #DDEEFF {
         +observeNetworkStatus(): Flow<Result<NetworkStatus>>
     }
 
-    interface NetworkNotifier {
-        +notifyWifiToMobile()
+    interface NetworkNotificationPresenter {
+        +displayNotification()
+    }
+
+    interface NotificationPermissionPresenter {
+        +requestNotificationPermission()
+        +showNotificationPermissionRequired()
+    }
+
+    interface NetworkStatusPresenter {
+        +onNetworkStatusUpdated(status: NetworkMonitoringStatus)
     }
 
     interface BackgroundMonitoringService {
@@ -56,12 +91,30 @@ package "commonMain" #DDEEFF {
         +stop()
     }
 
+    interface NotificationPermissionRepository {
+        +getStatus(): NotificationPermissionStatus
+        +recordPermissionDecision()
+    }
+
     class NetworkUseCase {
         -networkConnectivity: NetworkConnectivity
-        -networkNotifier: NetworkNotifier
-        -previousStatus: NetworkStatus
-        +observeNetworkStatus(): Flow<NetworkUiStatus>
-        +getCurrentNetworkStatus(): NetworkUiStatus
+        +observe(notificationPresenter, statusPresenter)
+    }
+
+    class NotificationPermissionUseCase {
+        -notificationPermissionRepository: NotificationPermissionRepository
+        +isMonitoringStartable(presenter)
+        +updateNotificationPermission(result, presenter)
+    }
+
+    class NetworkMonitor {
+        -networkUseCase: NetworkUseCase
+        -backgroundMonitoringService: BackgroundMonitoringService
+        -isMonitoring: Boolean
+        +status: StateFlow<NetworkMonitoringStatus?>
+        +start()
+        +stop()
+        +observe()
     }
 
     class NetworkStatus <<sealed>> {
@@ -69,20 +122,35 @@ package "commonMain" #DDEEFF {
         +NotConnected
     }
 
+    class NetworkMonitoringStatus <<sealed>> {
+        +Available(status: NetworkStatus)
+        +Failed
+    }
+
     NetworkUseCase --> NetworkConnectivity
-    NetworkUseCase --> NetworkNotifier
+    NetworkUseCase ..> NetworkNotificationPresenter
+    NetworkUseCase ..> NetworkStatusPresenter
+    NotificationPermissionUseCase --> NotificationPermissionRepository
+    NotificationPermissionUseCase ..> NotificationPermissionPresenter
+    NetworkMonitor ..|> NetworkNotificationPresenter
+    NetworkMonitor ..|> NetworkStatusPresenter
+    NetworkMonitor --> NetworkUseCase
+    NetworkMonitor --> BackgroundMonitoringService
 }
 
 package "presentation" #E8E8FF {
     class NetworkViewModel {
-        -networkUseCase: NetworkUseCase
-        -backgroundMonitoringService: BackgroundMonitoringService
+        -networkMonitor: NetworkMonitor
+        -notificationPermissionUseCase: NotificationPermissionUseCase
+        +uiEffect: SharedFlow<NetworkUiEffect>
         +observeNetworkStatus()
+        +updateNotificationPermission(result)
         +stopObserveNetworkStatus()
     }
 
-    NetworkViewModel --> NetworkUseCase
-    NetworkViewModel --> BackgroundMonitoringService
+    NetworkViewModel ..|> NotificationPermissionPresenter
+    NetworkViewModel --> NetworkMonitor
+    NetworkViewModel --> NotificationPermissionUseCase
 }
 
 package "androidMain" #DDFFDD {
@@ -96,17 +164,30 @@ package "androidMain" #DDFFDD {
         +notifyWifiToMobile()
     }
 
+    class NotificationPermissionRepositoryImpl {
+        -context: Context
+        -dataStore: DataStore<Preferences>
+        +getStatus(): NotificationPermissionStatus
+        +recordPermissionDecision()
+    }
+
     class ForegroundMonitoringService {
-        -networkUseCase: NetworkUseCase
+        -networkMonitor: NetworkMonitor
+        -observeJob: Job?
         +onStartCommand(): Int
+    }
+
+    class ForegroundMonitoringServiceController {
+        -context: Context
         +start()
         +stop()
     }
 
     NetworkConnectivityImpl ..|> NetworkConnectivity
-    NetworkNotifierImpl ..|> NetworkNotifier
-    ForegroundMonitoringService ..|> BackgroundMonitoringService
-    ForegroundMonitoringService --> NetworkUseCase
+    NotificationPermissionRepositoryImpl ..|> NotificationPermissionRepository
+    NetworkMonitor --> NetworkNotifierImpl
+    ForegroundMonitoringService --> NetworkMonitor
+    ForegroundMonitoringServiceController ..|> BackgroundMonitoringService
 }
 
 package "iosMain" #FFF3DD {
@@ -123,12 +204,14 @@ package "iosMain" #FFF3DD {
         -networkUseCase: NetworkUseCase
         +start()
         +stop()
+        +displayNotification()
     }
 
     iOSConnectivity ..|> NetworkConnectivity
-    iOSNotifier ..|> NetworkNotifier
     BackgroundMonitoringServiceImpl ..|> BackgroundMonitoringService
+    BackgroundMonitoringServiceImpl ..|> NetworkNotificationPresenter
     BackgroundMonitoringServiceImpl --> NetworkUseCase
+    BackgroundMonitoringServiceImpl --> iOSNotifier
 }
 @enduml
 ```
@@ -139,6 +222,10 @@ package "iosMain" #FFF3DD {
 
 1. **通知パーミッション（Android 13+ / API 33+）**
    - `POST_NOTIFICATIONS` 権限の許可はバックグラウンドでの通知表示に必要ですが、Foreground Service (FGS) 自体の起動・動作自体は通知権限がなくても実行可能です（その場合、通知は表示されません）。ただし、ユーザーにサービスの稼働を示すために、アプリ起動時または監視機能の有効化時に権限要求ダイアログを表示することが推奨されます。
+   - 本実装ではアプリ起動直後には権限要求せず、監視開始時に `NotificationPermissionUseCase` が `NotificationPermissionStatus` を判定する。
+   - `Requestable` の場合は `NotificationPermissionPresenter.requestNotificationPermission()` を呼び、`NetworkViewModel` が `NetworkUiEffect.RequestNotificationPermission` を emit する。Activity はこの effect を受けて permission launcher を起動する。
+   - `RequiredButNotGranted` の場合、または権限要求結果が拒否だった場合は `NotificationPermissionPresenter.showNotificationPermissionRequired()` を呼び、Snackbar で通知許可が必要なことを表示する。
+   - 過去に権限要求したかどうかは `NotificationPermissionRepositoryImpl` が DataStore Preferences に保存する。これにより初回の `Requestable` と、過去拒否済みの `RequiredButNotGranted` を区別する。
 
 2. **Foreground Service Type の指定（Android 14+ / API 34+）**
    - Foreground Service の起動にあたり、マニフェストおよびコード内での `foregroundServiceType` の明示的な指定が必須。
@@ -173,44 +260,69 @@ package "iosMain" #FFF3DD {
 ### Foreground Service の常時通知について
 
 Android 8以降、Foreground Service には通知チャンネルが必須。
+一方で `minSdk = 24` のため、`NotificationChannel` の作成と `startForegroundService()` の呼び出しは API 26 以上でのみ実行する。API 25 以下では通知チャンネルを作成せず、サービス起動には `startService()` を使う。
 ユーザー体験を損なわないよう、常時通知は最小化設定を推奨する。
 
 ```kotlin
-NotificationChannel(
-    CHANNEL_ID_MONITORING,
-    "ネットワーク監視",
-    NotificationManager.IMPORTANCE_MIN  // 通知バーの最下部に表示、音なし
-)
+if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+    NotificationChannel(
+        CHANNEL_ID_MONITORING,
+        "ネットワーク監視",
+        NotificationManager.IMPORTANCE_MIN,  // 通知バーの最下部に表示、音なし
+    )
+}
 ```
 
 WiFi→モバイル検知時の通知は別チャンネルで `IMPORTANCE_HIGH` に設定する。
 
 ### 状態遷移の検知ロジック
 
-状態変化（Wifi → Mobile）のトリガー判定ロジックは、将来的なKMP共通化を見据えて `commonMain` 側のユースケースや監視エンジンに持たせることが望ましい。
+`previousStatus` は `observe()` 呼び出しごとのコルーチンローカル変数として保持する。UseCase インスタンスに状態を持たせず、監視 coroutine のライフサイクルに閉じる。
 
 ```kotlin
-var previousStatus: NetworkStatus? = null
-
-fun observeNetworkStatus(): Flow<Result<NetworkStatus>> {
-    return networkConnectivity.observeNetworkStatus()
-        .onEach { result ->
-            val current = result.getOrNull() ?: return@onEach
+suspend fun observe(
+    notificationPresenter: NetworkNotificationPresenter,
+    statusPresenter: NetworkStatusPresenter,
+) {
+    var previousStatus: NetworkStatus? = null
+    networkConnectivity.observeNetworkStatus().collect { result ->
+        val current = result.getOrNull()
+        if (current != null) {
             val previous = previousStatus
-            
-            if (previous is NetworkStatus.Connected && previous.type == NetworkStatus.NetworkType.Wifi
-                && current is NetworkStatus.Connected && current.type == NetworkStatus.NetworkType.Mobile) {
-                networkNotifier.notifyWifiToMobile()
+            if (previous is NetworkStatus.Connected &&
+                previous.type == NetworkStatus.NetworkType.Wifi &&
+                current is NetworkStatus.Connected &&
+                current.type == NetworkStatus.NetworkType.Mobile
+            ) {
+                notificationPresenter.displayNotification()
             }
             previousStatus = current
         }
+        statusPresenter.onNetworkStatusUpdated(result.toMonitoringStatus())
+    }
+}
+
+private fun Result<NetworkStatus>.toMonitoringStatus(): NetworkMonitoringStatus =
+    fold(
+        onSuccess = { status -> NetworkMonitoringStatus.Available(status) },
+        onFailure = { NetworkMonitoringStatus.Failed },
+    )
+```
+
+監視 coroutine の `Job` は UseCase ではなく Platform 側が保持する。Android では FGS の `onStartCommand()` が複数回呼ばれる可能性があるため、`observeJob` で多重起動を防ぐ。
+
+```kotlin
+if (observeJob?.isActive != true) {
+    observeJob = serviceScope.launch {
+        networkMonitor.observe()
+    }
 }
 ```
 
 ### iOS 側のバックグラウンド動作への対応（将来）
 
 iOS ではセキュリティと省電力の制限により、バックグラウンドでのリアルタイム監視（常時ソケット接続や常時ポーリングなど）は不可能です。
-そのため、`BackgroundMonitoringService` の iOS 側の実装では以下のハイブリッドアプローチを想定します。
+そのため、`BackgroundMonitoringServiceImpl` の iOS 側の実装では以下のハイブリッドアプローチを想定します。
 
 1. **フォアグラウンド時**: `NWPathMonitor` を利用してリアルタイムにネットワーク変更を監視。
 2. **バックグラウンド時**: `BGTaskScheduler`（Background Tasks）を用いて、OSが許可したバックグラウンド実行タイミング（最短で十数分〜数時間間隔）で現在のネットワーク状態を取得。
