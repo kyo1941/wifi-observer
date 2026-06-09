@@ -5,6 +5,8 @@ import com.example.wifi_observer.platform.NetworkNotifierImpl
 import com.example.wifi_observer.platform.interfaces.BackgroundMonitoringService
 import com.example.wifi_observer.platform.interfaces.NetworkNotificationPresenter
 import com.example.wifi_observer.viewmodel.NetworkStatusPresenter
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -19,32 +21,29 @@ class NetworkMonitor(
     val status: StateFlow<NetworkMonitoringStatus?> = _status.asStateFlow()
 
     @Volatile
-    private var isMonitoring = false
+    private var observeJob: Job? = null
 
     fun start() {
         backgroundMonitoringService.start()
-        isMonitoring = true
     }
 
     fun stop() {
+        observeJob?.cancel()
+        observeJob = null
         backgroundMonitoringService.stop()
-        isMonitoring = false
         _status.value = null
     }
 
     suspend fun observe() {
+        observeJob = currentCoroutineContext()[Job]
         networkUseCase.observe(notificationPresenter = this, statusPresenter = this)
     }
 
     override fun displayNotification() {
-        if (isMonitoring) {
-            networkNotifier.notifyWifiToMobile()
-        }
+        networkNotifier.notifyWifiToMobile()
     }
 
     override fun onNetworkStatusUpdated(status: NetworkMonitoringStatus) {
-        if (isMonitoring) {
-            _status.value = status
-        }
+        _status.value = status
     }
 }
