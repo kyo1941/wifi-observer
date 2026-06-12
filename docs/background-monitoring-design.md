@@ -98,6 +98,7 @@ package "commonMain" #DDEEFF {
 
     class NetworkUseCase {
         -networkConnectivity: NetworkConnectivity
+        -timeSource: TimeSource
         +observe(notificationPresenter, statusPresenter)
     }
 
@@ -277,26 +278,41 @@ WiFi→モバイル検知時の通知は別チャンネルで `IMPORTANCE_HIGH` 
 
 ### 状態遷移の検知ロジック
 
-`previousStatus` は `observe()` 呼び出しごとのコルーチンローカル変数として保持する。UseCase インスタンスに状態を持たせず、監視 coroutine のライフサイクルに閉じる。
+通知判定用の状態（`lastConnectedType` / `disconnectedTime`）は `observe()` 呼び出しごとのコルーチンローカル変数として保持する。UseCase インスタンスに状態を持たせず、監視 coroutine のライフサイクルに閉じる。
+
+Android の `NetworkCallback` はネットワーク切り替え時に `onLost()` を挟むことがあり、`Wifi -> NotConnected -> Mobile` という順序で観測され得る（issue #8）。UI には全状態をそのまま渡しつつ、通知判定では切断からの経過時間が grace period（5秒）以内であれば実質的な `Wifi -> Mobile` 切り替えとして扱う。長時間オフライン後の Mobile 接続は誤通知を避けるため通知しない。
+
+なお `observeNetworkStatus()` は `distinctUntilChanged` 済みのため、`Connected(Wifi)` は接続中に繰り返し流れず接続時の1回しか観測されない。そのため「最後に Connected を観測した時刻」ではなく「切断した時刻」（`disconnectedTime`）を grace 判定の基準にする。`disconnectedTime == null`（NotConnected を挟まない直接の切り替え）は無条件で grace 内として扱う。
+
+時刻の取得は `kotlin.time.TimeSource` を注入して行う（既定は `TimeSource.Monotonic`、テストでは `TestTimeSource`）。`commonMain` 互換であり、壁時計のジャンプの影響も受けない。
 
 ```kotlin
 suspend fun observe(
     notificationPresenter: NetworkNotificationPresenter,
     statusPresenter: NetworkStatusPresenter,
 ) {
-    var previousStatus: NetworkStatus? = null
+    var lastConnectedType: NetworkStatus.NetworkType? = null
+    var disconnectedTime: TimeMark? = null
     networkConnectivity.observeNetworkStatus().collect { result ->
-        val current = result.getOrNull()
-        if (current != null) {
-            val previous = previousStatus
-            if (previous is NetworkStatus.Connected &&
-                previous.type == NetworkStatus.NetworkType.Wifi &&
-                current is NetworkStatus.Connected &&
-                current.type == NetworkStatus.NetworkType.Mobile
-            ) {
-                notificationPresenter.displayNotification()
+        when (val current = result.getOrNull()) {
+            is NetworkStatus.Connected -> {
+                val isShortInterruption =
+                    disconnectedTime?.let { it.elapsedNow() <= WIFI_TO_MOBILE_GRACE } ?: true
+                if (lastConnectedType == NetworkStatus.NetworkType.Wifi &&
+                    current.type == NetworkStatus.NetworkType.Mobile &&
+                    isShortInterruption
+                ) {
+                    notificationPresenter.displayNotification()
+                }
+                lastConnectedType = current.type
+                disconnectedTime = null
             }
-            previousStatus = current
+            NetworkStatus.NotConnected -> {
+                if (disconnectedTime == null) {
+                    disconnectedTime = timeSource.markNow()
+                }
+            }
+            null -> Unit
         }
         statusPresenter.onNetworkStatusUpdated(result.toMonitoringStatus())
     }
@@ -308,6 +324,15 @@ private fun Result<NetworkStatus>.toMonitoringStatus(): NetworkMonitoringStatus 
         onFailure = { NetworkMonitoringStatus.Failed },
     )
 ```
+
+| 遷移 | 通知 |
+|------|:----:|
+| `Wifi -> Mobile`（直接） | ○ |
+| `Wifi -> NotConnected(grace 内) -> Mobile` | ○ |
+| `Wifi -> NotConnected(grace 超過) -> Mobile` | × |
+| `Mobile -> NotConnected -> Mobile` | × |
+| 接続歴なし `-> Mobile` | × |
+| 通知後の `Mobile -> NotConnected -> Mobile` | ×（再通知しない） |
 
 監視 coroutine の `Job` は UseCase ではなく Platform 側が保持する。Android では FGS の `onStartCommand()` が複数回呼ばれる可能性があるため、`observeJob` で多重起動を防ぐ。
 
