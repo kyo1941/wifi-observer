@@ -59,7 +59,7 @@ note over OS: WiFi 接続中
 
 OS --> Connectivity: onCapabilitiesChanged(TRANSPORT_WIFI)
 Connectivity --> UseCase: emit(NetworkStatus.Connected(Wifi))
-UseCase -> UseCase: previousStatus = Wifi
+UseCase -> UseCase: lastConnectedType = Wifi
 UseCase -> Monitor: onNetworkStatusUpdated(Wifi)
 Monitor --> ViewModel: status StateFlow 更新
 
@@ -67,11 +67,54 @@ note over OS: WiFi → モバイル回線に切り替わる
 
 OS --> Connectivity: onCapabilitiesChanged(TRANSPORT_CELLULAR)
 Connectivity --> UseCase: emit(NetworkStatus.Connected(Mobile))
-UseCase -> UseCase: previousStatus=Wifi かつ current=Mobile を検知
+UseCase -> UseCase: lastConnectedType=Wifi かつ current=Mobile\n（grace 内）を検知
 UseCase -> Monitor: displayNotification()
 Monitor -> Notifier: notifyWifiToMobile()
 Notifier -> NotifOS: notify()\n「モバイル回線に切り替わりました」
 NotifOS --> ユーザー: プッシュ通知
+UseCase -> Monitor: onNetworkStatusUpdated(Mobile)
+Monitor --> ViewModel: status StateFlow 更新
+@enduml
+```
+
+## 一時切断を挟む切り替えフロー
+
+Android の `NetworkCallback` はネットワーク切り替え時に `onLost()` を挟むことがあり、`Wifi -> NotConnected -> Mobile` の順で観測され得る。UI には `NotConnected` もそのまま反映しつつ、通知判定では切断からの経過が grace period（5秒）以内なら実質的な `Wifi -> Mobile` 切り替えとして通知する。grace を超えた場合（長時間オフライン後の Mobile 接続）は通知しない。
+
+```plantuml
+@startuml
+skinparam sequenceArrowThickness 2
+skinparam roundcorner 5
+
+actor ユーザー
+participant "NetworkViewModel" as ViewModel #E8E8FF
+participant "NetworkMonitor" as Monitor #DDEEFF
+participant "NetworkUseCase" as UseCase #DDEEFF
+participant "NetworkConnectivityImpl" as Connectivity #AADDAA
+participant "ConnectivityManager\n(Android OS)" as OS #CCCCCC
+
+note over OS: WiFi 接続中（lastConnectedType = Wifi）
+
+note over OS: WiFi → モバイル回線に切り替わる
+
+OS --> Connectivity: onLost(wifiNetwork)
+Connectivity --> UseCase: emit(NetworkStatus.NotConnected)
+UseCase -> UseCase: disconnectedTime = markNow()
+UseCase -> Monitor: onNetworkStatusUpdated(NotConnected)
+Monitor --> ViewModel: status StateFlow 更新\n（UI は NotConnected を表示）
+
+OS --> Connectivity: onCapabilitiesChanged(TRANSPORT_CELLULAR)
+Connectivity --> UseCase: emit(NetworkStatus.Connected(Mobile))
+
+alt 切断からの経過 <= 5秒（grace 内）
+    UseCase -> UseCase: lastConnectedType=Wifi かつ grace 内の Mobile 接続を検知
+    UseCase -> Monitor: displayNotification()
+    Monitor --> ユーザー: プッシュ通知
+else grace 超過（長時間オフライン後の接続）
+    note over UseCase: 通知しない
+end
+
+UseCase -> UseCase: lastConnectedType = Mobile\ndisconnectedTime = null
 UseCase -> Monitor: onNetworkStatusUpdated(Mobile)
 Monitor --> ViewModel: status StateFlow 更新
 @enduml
@@ -137,7 +180,7 @@ note over OS: WiFi → モバイル回線に切り替わる
 
 OS --> Connectivity: onCapabilitiesChanged(TRANSPORT_CELLULAR)
 Connectivity --> UseCase: emit(NetworkStatus.Connected(Mobile))
-UseCase -> UseCase: previousStatus=Wifi かつ current=Mobile を検知
+UseCase -> UseCase: lastConnectedType=Wifi かつ current=Mobile\n（grace 内）を検知
 UseCase -> Monitor: displayNotification()
 Monitor -> Notifier: notifyWifiToMobile()
 Notifier -> NotifOS: notify()
