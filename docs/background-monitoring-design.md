@@ -294,35 +294,35 @@ suspend fun observe(
     var lastConnectedType: NetworkStatus.NetworkType? = null
     var disconnectedTime: TimeMark? = null
     networkConnectivity.observeNetworkStatus().collect { result ->
-        when (val current = result.getOrNull()) {
-            is NetworkStatus.Connected -> {
-                val isShortInterruption =
-                    disconnectedTime?.let { it.elapsedNow() <= WIFI_TO_MOBILE_GRACE } ?: true
-                if (lastConnectedType == NetworkStatus.NetworkType.Wifi &&
-                    current.type == NetworkStatus.NetworkType.Mobile &&
-                    isShortInterruption
-                ) {
-                    notificationPresenter.displayNotification()
+        result.fold(
+            onSuccess = { current ->
+                when (current) {
+                    is NetworkStatus.Connected -> {
+                        val isShortInterruption =
+                            disconnectedTime?.let { it.elapsedNow() <= WIFI_TO_MOBILE_GRACE } ?: true
+                        if (lastConnectedType == NetworkStatus.NetworkType.Wifi &&
+                            current.type == NetworkStatus.NetworkType.Mobile &&
+                            isShortInterruption
+                        ) {
+                            notificationPresenter.displayNotification()
+                        }
+                        lastConnectedType = current.type
+                        disconnectedTime = null
+                    }
+                    NetworkStatus.NotConnected -> {
+                        if (disconnectedTime == null) {
+                            disconnectedTime = timeSource.markNow()
+                        }
+                    }
                 }
-                lastConnectedType = current.type
-                disconnectedTime = null
-            }
-            NetworkStatus.NotConnected -> {
-                if (disconnectedTime == null) {
-                    disconnectedTime = timeSource.markNow()
-                }
-            }
-            null -> Unit
-        }
-        statusPresenter.onNetworkStatusUpdated(result.toMonitoringStatus())
+                statusPresenter.onNetworkStatusUpdated(NetworkMonitoringStatus.Available(current))
+            },
+            onFailure = {
+                statusPresenter.onNetworkStatusUpdated(NetworkMonitoringStatus.Failed)
+            },
+        )
     }
 }
-
-private fun Result<NetworkStatus>.toMonitoringStatus(): NetworkMonitoringStatus =
-    fold(
-        onSuccess = { status -> NetworkMonitoringStatus.Available(status) },
-        onFailure = { NetworkMonitoringStatus.Failed },
-    )
 ```
 
 | 遷移 | 通知 |
