@@ -67,7 +67,9 @@ class MainActivity : ComponentActivity() {
                         }
 
                         is NetworkUiEffect.ShowNotificationPermissionRequiredSnackbar -> {
-                            snackbarHostState.showSnackbar(notificationPermissionRequiredMessage)
+                            if (snackbarHostState.currentSnackbarData == null) {
+                                snackbarHostState.showSnackbar(notificationPermissionRequiredMessage)
+                            }
                         }
                     }
                 }
