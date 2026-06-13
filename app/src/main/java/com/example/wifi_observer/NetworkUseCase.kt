@@ -1,5 +1,6 @@
 package com.example.wifi_observer
 
+import android.util.Log
 import com.example.wifi_observer.model.NetworkMonitoringStatus
 import com.example.wifi_observer.model.NetworkStatus
 import com.example.wifi_observer.platform.interfaces.NetworkConnectivity
@@ -20,41 +21,37 @@ class NetworkUseCase(
         var lastConnectedType: NetworkStatus.NetworkType? = null
         var disconnectedTime: TimeMark? = null
         networkConnectivity.observeNetworkStatus().collect { result ->
-            // TODO: Result型の解体をシンプルにする。 issue #11 (https://github.com/kyo1941/wifi-observer/issues/11)
-            when (val current = result.getOrNull()) {
-                is NetworkStatus.Connected -> {
-                    // NOTE: ネットワーク切り替え時は Wifi -> NotConnected -> Mobile と観測されることがあるため、切断からの経過時間が grace period 内なら実質的な Wifi -> Mobile 切り替えとして扱う
-                    val isShortInterruption =
-                        disconnectedTime?.let { it.elapsedNow() <= WIFI_TO_MOBILE_GRACE } ?: true
-                    if (lastConnectedType == NetworkStatus.NetworkType.Wifi &&
-                        current.type == NetworkStatus.NetworkType.Mobile &&
-                        isShortInterruption
-                    ) {
-                        notificationPresenter.displayNotification()
+            result.fold(
+                onSuccess = { current ->
+                    when (current) {
+                        is NetworkStatus.Connected -> {
+                            // NOTE: ネットワーク切り替え時は Wifi -> NotConnected -> Mobile と観測されることがあるため、切断からの経過時間が grace period 内なら実質的な Wifi -> Mobile 切り替えとして扱う
+                            val isShortInterruption =
+                                disconnectedTime?.let { it.elapsedNow() <= WIFI_TO_MOBILE_GRACE } ?: true
+                            if (lastConnectedType == NetworkStatus.NetworkType.Wifi &&
+                                current.type == NetworkStatus.NetworkType.Mobile &&
+                                isShortInterruption
+                            ) {
+                                notificationPresenter.displayNotification()
+                            }
+                            lastConnectedType = current.type
+                            disconnectedTime = null
+                        }
+                        NetworkStatus.NotConnected -> {
+                            if (disconnectedTime == null) {
+                                disconnectedTime = timeSource.markNow()
+                            }
+                        }
                     }
-                    lastConnectedType = current.type
-                    disconnectedTime = null
-                }
-                NetworkStatus.NotConnected -> {
-                    if (disconnectedTime == null) {
-                        disconnectedTime = timeSource.markNow()
-                    }
-                }
-                null -> Unit
-            }
-            statusPresenter.onNetworkStatusUpdated(result.toMonitoringStatus())
+                    statusPresenter.onNetworkStatusUpdated(NetworkMonitoringStatus.Available(current))
+                },
+                onFailure = { throwable ->
+                    Log.w("NetworkUseCase", "Failed to observe network status", throwable)
+                    statusPresenter.onNetworkStatusUpdated(NetworkMonitoringStatus.Failed)
+                },
+            )
         }
     }
-
-    private fun Result<NetworkStatus>.toMonitoringStatus(): NetworkMonitoringStatus =
-        fold(
-            onSuccess = { status ->
-                NetworkMonitoringStatus.Available(status)
-            },
-            onFailure = {
-                NetworkMonitoringStatus.Failed
-            },
-        )
 
     companion object {
         private val WIFI_TO_MOBILE_GRACE = 5.seconds
