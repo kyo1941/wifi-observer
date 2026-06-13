@@ -32,37 +32,38 @@ class NotificationPermissionRepositoryImpl(
     private val appContext = context.applicationContext
     private val dataStore = appContext.notificationPermissionDataStore
 
-    override suspend fun getStatus(): NotificationPermissionStatus = withContext(Dispatchers.IO) {
-        val notificationsEnabled = NotificationManagerCompat.from(appContext).areNotificationsEnabled()
+    override suspend fun getStatus(): NotificationPermissionStatus =
+        withContext(Dispatchers.IO) {
+            val notificationsEnabled = NotificationManagerCompat.from(appContext).areNotificationsEnabled()
 
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
-            return@withContext if (notificationsEnabled) {
-                NotificationPermissionStatus.NotRequired
-            } else {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+                return@withContext if (notificationsEnabled) {
+                    NotificationPermissionStatus.NotRequired
+                } else {
+                    NotificationPermissionStatus.RequiredButNotGranted
+                }
+            }
+
+            val permissionGranted =
+                ContextCompat.checkSelfPermission(
+                    appContext,
+                    Manifest.permission.POST_NOTIFICATIONS,
+                ) == PackageManager.PERMISSION_GRANTED
+
+            if (permissionGranted) {
+                return@withContext if (notificationsEnabled) {
+                    NotificationPermissionStatus.Granted
+                } else {
+                    NotificationPermissionStatus.RequiredButNotGranted
+                }
+            }
+
+            if (hasRequestedPermission()) {
                 NotificationPermissionStatus.RequiredButNotGranted
+            } else {
+                NotificationPermissionStatus.Requestable
             }
         }
-
-        val permissionGranted =
-            ContextCompat.checkSelfPermission(
-                appContext,
-                Manifest.permission.POST_NOTIFICATIONS,
-            ) == PackageManager.PERMISSION_GRANTED
-
-        if (permissionGranted) {
-            return@withContext if (notificationsEnabled) {
-                NotificationPermissionStatus.Granted
-            } else {
-                NotificationPermissionStatus.RequiredButNotGranted
-            }
-        }
-
-        if (hasRequestedPermission()) {
-            NotificationPermissionStatus.RequiredButNotGranted
-        } else {
-            NotificationPermissionStatus.Requestable
-        }
-    }
 
     override suspend fun recordPermissionDecision() {
         withContext(Dispatchers.IO) {

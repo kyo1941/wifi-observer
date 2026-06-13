@@ -1,13 +1,19 @@
 package com.example.wifi_observer
 
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Text
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
-import com.example.wifi_observer.components.network.NetworkIconOnly
 import com.example.wifi_observer.components.network.NetworkIconTextButton
+import com.example.wifi_observer.components.network.NetworkStatusBadge
+import com.example.wifi_observer.ui.theme.StatusConnected
+import com.example.wifi_observer.ui.theme.StatusError
+import com.example.wifi_observer.ui.theme.StatusMobile
+import com.example.wifi_observer.ui.theme.StatusOther
+import com.example.wifi_observer.ui.theme.StatusWarning
 import com.example.wifi_observer.viewmodel.NetworkUiStatus
 
 @Composable
@@ -15,61 +21,77 @@ fun NetworkContentView(
     networkStatus: NetworkUiStatus,
     onStartObserve: () -> Unit,
     onStopObserve: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
-    when (networkStatus) {
-        is NetworkUiStatus.Loading -> {
-            NetworkActionLayout(
-                topContent = {
-                    CircularProgressIndicator()
-                },
-                actionButton = {
-                    NetworkIconTextButton(
-                        iconPainter = painterResource(R.drawable.baseline_stop_24),
-                        labelText = stringResource(R.string.stop),
-                        onClick = onStopObserve,
-                    )
-                },
-            )
+    val accent = networkStatus.accentColor()
+
+    val (title, description) =
+        when (networkStatus) {
+            is NetworkUiStatus.Loading ->
+                stringResource(R.string.status_loading_title) to
+                    stringResource(R.string.status_loading_description)
+
+            is NetworkUiStatus.Wifi ->
+                stringResource(R.string.status_wifi_title) to
+                    stringResource(R.string.status_wifi_description)
+
+            is NetworkUiStatus.Mobile ->
+                stringResource(R.string.status_mobile_title) to
+                    stringResource(R.string.status_mobile_description)
+
+            is NetworkUiStatus.Other ->
+                stringResource(R.string.status_other_title) to
+                    stringResource(R.string.status_other_description)
+
+            is NetworkUiStatus.NotConnected ->
+                stringResource(R.string.status_disconnected_title) to
+                    stringResource(R.string.status_disconnected_description)
+
+            is NetworkUiStatus.Error ->
+                stringResource(R.string.status_error_title) to networkStatus.message
         }
 
-        is NetworkUiStatus.Wifi, NetworkUiStatus.Mobile, NetworkUiStatus.Other, NetworkUiStatus.NotConnected -> {
-            NetworkActionLayout(
-                topContent = {
-                    NetworkIconOnly(
-                        painter = networkStatus.toIcon(),
-                    )
-                },
-                actionButton = {
-                    NetworkIconTextButton(
-                        iconPainter = painterResource(R.drawable.baseline_stop_24),
-                        labelText = stringResource(R.string.stop),
-                        onClick = onStopObserve,
-                    )
-                },
+    NetworkActionLayout(
+        modifier = modifier,
+        badge = {
+            NetworkStatusBadge(
+                painter = networkStatus.toIcon(),
+                accent = accent,
+                isLoading = networkStatus is NetworkUiStatus.Loading,
             )
-        }
-
-        is NetworkUiStatus.Error -> {
-            NetworkActionLayout(
-                topContent = {
-                    NetworkIconOnly(
-                        painter = networkStatus.toIcon(),
-                    )
-                },
-                middleContent = {
-                    Text(text = networkStatus.message)
-                },
-                actionButton = {
-                    NetworkIconTextButton(
-                        iconPainter = painterResource(R.drawable.baseline_autorenew_24),
-                        labelText = stringResource(R.string.retry),
-                        onClick = onStartObserve,
-                    )
-                },
-            )
-        }
-    }
+        },
+        title = title,
+        description = description,
+        actionButton = {
+            if (networkStatus is NetworkUiStatus.Error) {
+                NetworkIconTextButton(
+                    iconPainter = painterResource(R.drawable.baseline_autorenew_24),
+                    labelText = stringResource(R.string.retry),
+                    onClick = onStartObserve,
+                )
+            } else {
+                NetworkIconTextButton(
+                    iconPainter = painterResource(R.drawable.baseline_stop_24),
+                    labelText = stringResource(R.string.stop),
+                    onClick = onStopObserve,
+                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                )
+            }
+        },
+    )
 }
+
+@Composable
+private fun NetworkUiStatus.accentColor(): Color =
+    when (this) {
+        is NetworkUiStatus.Wifi -> StatusConnected
+        is NetworkUiStatus.Mobile -> StatusMobile
+        is NetworkUiStatus.Other -> StatusOther
+        is NetworkUiStatus.NotConnected -> StatusWarning
+        is NetworkUiStatus.Error -> StatusError
+        is NetworkUiStatus.Loading -> MaterialTheme.colorScheme.primary
+    }
 
 @Composable
 fun NetworkUiStatus.toIcon(): Painter =

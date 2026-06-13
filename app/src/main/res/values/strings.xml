@@ -4,4 +4,23 @@
     <string name="stop">停止</string>
     <string name="retry">再試行</string>
     <string name="notification_permission_required">通知が許可されていないため、切り替え通知を表示できません。</string>
+
+    <!-- ヘッダー -->
+    <string name="app_title">Wi-Fi Observer</string>
+    <string name="app_subtitle">ネットワークの切り替えを見守ります</string>
+
+    <!-- ステータス表示 -->
+    <string name="status_idle_title">監視は停止中</string>
+    <string name="status_idle_description">「開始」でネットワークの監視を始めます</string>
+    <string name="status_loading_title">ネットワークを監視中</string>
+    <string name="status_loading_description">接続の切り替えを見張っています</string>
+    <string name="status_wifi_title">Wi-Fi に接続中</string>
+    <string name="status_wifi_description">安定したネットワークに接続されています</string>
+    <string name="status_mobile_title">モバイル回線に接続中</string>
+    <string name="status_mobile_description">モバイルデータ通信を使用しています</string>
+    <string name="status_other_title">ネットワークに接続中</string>
+    <string name="status_other_description">その他のネットワークに接続されています</string>
+    <string name="status_disconnected_title">ネットワーク未接続</string>
+    <string name="status_disconnected_description">接続できるネットワークがありません</string>
+    <string name="status_error_title">エラーが発生しました</string>
 </resources>
