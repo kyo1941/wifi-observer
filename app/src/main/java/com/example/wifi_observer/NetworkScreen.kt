@@ -37,10 +37,9 @@ fun NetworkScreen(
 
     Column(
         modifier =
-            Modifier
+            modifier
                 .fillMaxSize()
-                .background(backgroundBrush)
-                .then(modifier),
+                .background(backgroundBrush),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         AppHeader(
