@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
@@ -26,14 +27,18 @@ fun NetworkScreen(
     modifier: Modifier = Modifier,
     viewModel: NetworkViewModel,
 ) {
+    val backgroundColor = MaterialTheme.colorScheme.background
+    val surfaceVariantColor = MaterialTheme.colorScheme.surfaceVariant
     val backgroundBrush =
-        Brush.verticalGradient(
-            colors =
-                listOf(
-                    MaterialTheme.colorScheme.background,
-                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
-                ),
-        )
+        remember(backgroundColor, surfaceVariantColor) {
+            Brush.verticalGradient(
+                colors =
+                    listOf(
+                        backgroundColor,
+                        surfaceVariantColor.copy(alpha = 0.4f),
+                    ),
+            )
+        }
 
     Column(
         modifier =

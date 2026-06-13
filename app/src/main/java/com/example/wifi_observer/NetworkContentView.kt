@@ -4,9 +4,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import com.example.wifi_observer.components.network.BadgeContent
 import com.example.wifi_observer.components.network.NetworkIconTextButton
 import com.example.wifi_observer.components.network.NetworkStatusBadge
 import com.example.wifi_observer.ui.theme.StatusConnected
@@ -55,9 +55,8 @@ fun NetworkContentView(
         modifier = modifier,
         badge = {
             NetworkStatusBadge(
-                painter = networkStatus.toIcon(),
+                content = networkStatus.toBadgeContent(),
                 accent = accent,
-                isLoading = networkStatus is NetworkUiStatus.Loading,
             )
         },
         title = title,
@@ -94,14 +93,13 @@ private fun NetworkUiStatus.accentColor(): Color =
     }
 
 @Composable
-fun NetworkUiStatus.toIcon(): Painter =
+fun NetworkUiStatus.toBadgeContent(): BadgeContent =
     when (this) {
-        is NetworkUiStatus.Wifi -> painterResource(R.drawable.outline_android_wifi_3_bar_24)
-        is NetworkUiStatus.Mobile -> painterResource(R.drawable.outline_cell_wifi_24)
-        is NetworkUiStatus.Other -> painterResource(R.drawable.outline_globe_24)
-        is NetworkUiStatus.NotConnected -> painterResource(R.drawable.outline_globe_2_cancel_24)
-        is NetworkUiStatus.Error -> painterResource(R.drawable.outline_globe_2_question_24)
+        is NetworkUiStatus.Wifi -> BadgeContent.Icon(painterResource(R.drawable.outline_android_wifi_3_bar_24))
+        is NetworkUiStatus.Mobile -> BadgeContent.Icon(painterResource(R.drawable.outline_cell_wifi_24))
+        is NetworkUiStatus.Other -> BadgeContent.Icon(painterResource(R.drawable.outline_globe_24))
+        is NetworkUiStatus.NotConnected -> BadgeContent.Icon(painterResource(R.drawable.outline_globe_2_cancel_24))
+        is NetworkUiStatus.Error -> BadgeContent.Icon(painterResource(R.drawable.outline_globe_2_question_24))
 
-        // NOTE: ローディング時はアイコンを使用しない
-        is NetworkUiStatus.Loading -> painterResource(R.drawable.outline_forward_circle_24)
+        is NetworkUiStatus.Loading -> BadgeContent.Progress
     }

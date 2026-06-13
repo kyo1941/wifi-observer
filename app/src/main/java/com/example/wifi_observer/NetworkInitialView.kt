@@ -5,6 +5,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import com.example.wifi_observer.components.network.BadgeContent
 import com.example.wifi_observer.components.network.NetworkIconTextButton
 import com.example.wifi_observer.components.network.NetworkStatusBadge
 
@@ -17,7 +18,7 @@ fun NetworkInitialView(
         modifier = modifier,
         badge = {
             NetworkStatusBadge(
-                painter = painterResource(R.drawable.outline_android_wifi_3_bar_24),
+                content = BadgeContent.Icon(painterResource(R.drawable.outline_android_wifi_3_bar_24)),
                 accent = MaterialTheme.colorScheme.outline,
             )
         },

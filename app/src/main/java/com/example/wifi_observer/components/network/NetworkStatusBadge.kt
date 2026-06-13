@@ -15,21 +15,29 @@ import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.unit.dp
 
 /**
- * ネットワーク状態を表す円形バッジ
+ * 円形バッジの中央に表示する内容。
+ */
+sealed interface BadgeContent {
+    /** アイコンを表示する。 */
+    data class Icon(val painter: Painter) : BadgeContent
+
+    /** 不定進捗のインジケーターを表示する。 */
+    data object Progress : BadgeContent
+}
+
+/**
+ * 円形バッジ
  *
- * アクセントカラーの同心円（ハロー）の中央にアイコン、
- * もしくはローディング中はプログレスインジケーターを表示する。
+ * アクセントカラーの同心円の中央に [content] を表示する。
  *
- * @param painter 中央に表示するアイコン
- * @param accent 状態に応じたアクセントカラー
- * @param isLoading true の場合はアイコンの代わりにプログレスを表示する
+ * @param content 中央に表示する内容（アイコン or 進捗インジケーター）
+ * @param accent アクセントカラー
  */
 @Composable
 fun NetworkStatusBadge(
-    painter: Painter,
+    content: BadgeContent,
     accent: Color,
     modifier: Modifier = Modifier,
-    isLoading: Boolean = false,
 ) {
     Box(
         modifier = modifier.size(208.dp),
@@ -50,19 +58,21 @@ fun NetworkStatusBadge(
                     .background(accent.copy(alpha = 0.14f)),
         )
 
-        if (isLoading) {
-            CircularProgressIndicator(
-                modifier = Modifier.size(96.dp),
-                color = accent,
-                strokeWidth = 6.dp,
-            )
-        } else {
-            Icon(
-                painter = painter,
-                contentDescription = null,
-                tint = accent,
-                modifier = Modifier.size(92.dp),
-            )
+        when (content) {
+            is BadgeContent.Progress ->
+                CircularProgressIndicator(
+                    modifier = Modifier.size(96.dp),
+                    color = accent,
+                    strokeWidth = 6.dp,
+                )
+
+            is BadgeContent.Icon ->
+                Icon(
+                    painter = content.painter,
+                    contentDescription = null,
+                    tint = accent,
+                    modifier = Modifier.size(92.dp),
+                )
         }
     }
 }
