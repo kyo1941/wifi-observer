@@ -1,6 +1,5 @@
 package com.example.wifi_observer
 
-import android.util.Log
 import com.example.wifi_observer.model.NetworkMonitoringStatus
 import com.example.wifi_observer.model.NetworkStatus
 import com.example.wifi_observer.platform.interfaces.NetworkConnectivity
@@ -46,7 +45,6 @@ class NetworkUseCase(
                     statusPresenter.onNetworkStatusUpdated(NetworkMonitoringStatus.Available(current))
                 },
                 onFailure = { throwable ->
-                    Log.w("NetworkUseCase", "Failed to observe network status", throwable)
                     statusPresenter.onNetworkStatusUpdated(NetworkMonitoringStatus.Failed)
                 },
             )
