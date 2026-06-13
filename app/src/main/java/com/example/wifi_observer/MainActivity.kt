@@ -23,6 +23,8 @@ import com.example.wifi_observer.ui.theme.WifiobserverTheme
 import com.example.wifi_observer.viewmodel.NetworkUiEffect
 import com.example.wifi_observer.viewmodel.NetworkViewModel
 import com.example.wifi_observer.viewmodel.factory.NetworkViewModelFactory
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -58,6 +60,8 @@ class MainActivity : ComponentActivity() {
                 }
 
             LaunchedEffect(networkViewModel) {
+                var notificationPermissionRequiredSnackbarJob: Job? = null
+
                 networkViewModel.uiEffect.collect { effect ->
                     when (effect) {
                         is NetworkUiEffect.RequestNotificationPermission -> {
@@ -67,9 +71,12 @@ class MainActivity : ComponentActivity() {
                         }
 
                         is NetworkUiEffect.ShowNotificationPermissionRequiredSnackbar -> {
-                            if (snackbarHostState.currentSnackbarData == null) {
-                                snackbarHostState.showSnackbar(notificationPermissionRequiredMessage)
-                            }
+                            notificationPermissionRequiredSnackbarJob?.cancel()
+                            snackbarHostState.currentSnackbarData?.dismiss()
+                            notificationPermissionRequiredSnackbarJob =
+                                launch {
+                                    snackbarHostState.showSnackbar(notificationPermissionRequiredMessage)
+                                }
                         }
                     }
                 }
