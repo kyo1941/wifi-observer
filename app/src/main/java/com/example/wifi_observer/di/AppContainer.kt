@@ -11,6 +11,7 @@ import com.example.wifi_observer.platform.NetworkNotifierImpl
 import com.example.wifi_observer.platform.NotificationPermissionRepositoryImpl
 import com.example.wifi_observer.platform.interfaces.BackgroundMonitoringService
 import com.example.wifi_observer.platform.interfaces.NetworkConnectivity
+import com.example.wifi_observer.platform.interfaces.NetworkNotifier
 import com.example.wifi_observer.platform.interfaces.NotificationPermissionRepository
 
 class AppContainer(
@@ -26,7 +27,7 @@ class AppContainer(
         NetworkConnectivityImpl(connectivityManager)
     }
 
-    private val networkNotifier: NetworkNotifierImpl by lazy {
+    private val networkNotifier: NetworkNotifier by lazy {
         NetworkNotifierImpl(appContext)
     }
 
