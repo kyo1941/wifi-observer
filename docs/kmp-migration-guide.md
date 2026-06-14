@@ -6,45 +6,66 @@
 
 ## 1. モジュール構成とファイル配置予定図
 
-KMP 移行時には、現在の Android アプリケーション構造から以下のようにモジュールを分割し、共通ロジック (`commonMain`) とプラットフォーム具象コード (`androidMain` / `iosMain`) を分類します。
+KMP 移行では、プラットフォーム非依存のコアを `domain/` パッケージに集約し、これをそのまま `shared` モジュールの `commonMain` へ抽出します。状態保持（`StateFlow`）・画面・ViewModel は各プラットフォームのネイティブ層に残します（理由は 1.1）。
 
 ```text
-shared/
-├── src/
-│   ├── commonMain/kotlin/com/example/wifi_observer/
-│   │   ├── NetworkMonitor.kt (監視開始・停止、Presenter実装、UI状態保持のFacade)
-│   │   ├── NetworkUseCase.kt (★状態遷移の検知・Presenter呼び出しのコアビジネスロジック)
-│   │   ├── NotificationPermissionUseCase.kt (通知許可状態の判定・UI要求)
-│   │   ├── model/
-│   │   │   ├── NetworkStatus.kt (WiFi/Mobile定義)
-│   │   │   ├── NetworkMonitoringStatus.kt (監視結果のUI更新用モデル)
-│   │   │   └── NotificationPermissionStatus.kt (通知許可状態)
-│   │   ├── platform/interfaces/
-│   │   │   ├── NetworkConnectivity.kt (接続状態の観測I/F)
-│   │   │   ├── NotificationPermissionRepository.kt (通知許可状態Repository)
-│   │   │   ├── NetworkNotificationPresenter.kt (通知発火I/F)
-│   │   │   └── BackgroundMonitoringService.kt (監視開始・停止I/F)
-│   │   ├── viewmodel/
-│   │   │   ├── NetworkViewModel.kt (NetworkMonitor.status を UI 状態へ変換)
-│   │   │   ├── NetworkUiEffect.kt (権限要求・Snackbar 等の単発UIイベント)
-│   │   │   ├── NotificationPermissionPresenter.kt (通知許可UI要求I/F)
-│   │   │   ├── NetworkStatusPresenter.kt (UI更新I/F)
-│   │   │   └── NetworkUiStatus.kt (UIモデル)
-│   │
-│   ├── androidMain/kotlin/com/example/wifi_observer/
-│   │   └── platform/
-│   │       ├── NetworkConnectivityImpl.kt (ConnectivityManager利用)
-│   │       ├── NetworkNotifierImpl.kt (NotificationManager利用)
-│   │       ├── NotificationPermissionRepositoryImpl.kt (POST_NOTIFICATIONS と DataStore 利用)
-│   │       ├── ForegroundMonitoringService.kt (FGS wrapper・監視Job管理)
-│   │       └── ForegroundMonitoringServiceController.kt (BackgroundMonitoringService実装)
-│   │
-│   └── iosMain/kotlin/com/example/wifi_observer/
-│       └── platform/
-│           ├── NetworkConnectivityImpl.kt (NWPathMonitor利用)
-│           ├── NetworkNotifierImpl.kt (UNUserNotificationCenter利用)
-│           └── BackgroundMonitoringServiceImpl.kt (NetworkNotificationPresenter実装・薄いBGTaskScheduler wrapper)
+【共通コア domain/（→ shared/commonMain へ抽出予定）】
+com/example/wifi_observer/
+├── domain/
+│   ├── model/
+│   │   ├── NetworkStatus.kt                      (WiFi/Mobile 定義)
+│   │   ├── NetworkMonitoringStatus.kt            (監視結果モデル)
+│   │   ├── NotificationPermissionStatus.kt       (通知許可状態)
+│   │   └── NotificationPermissionRequestResult.kt
+│   ├── usecase/
+│   │   ├── NetworkUseCase.kt                      (★状態遷移検知のコアロジック)
+│   │   └── NotificationPermissionUseCase.kt       (通知許可判定・UI 要求)
+│   └── gateway/                                   (コアが外界と結ぶ契約 = ポート群)
+│       ├── NetworkConnectivity.kt                (接続状態の観測 I/F)
+│       ├── NetworkNotifier.kt                    (通知発火 I/F)
+│       ├── NetworkNotificationPresenter.kt       (通知発火の出力ポート)
+│       ├── NetworkStatusPresenter.kt             (状態更新の出力ポート)
+│       ├── NotificationPermissionPresenter.kt    (通知許可 UI 要求の出力ポート)
+│       ├── NotificationPermissionRepository.kt   (通知許可状態 Repository)
+│       └── BackgroundMonitoringService.kt        (監視開始・停止 I/F)
+
+【Android ネイティブ層（現状 :app。gateway 実装・状態保持・UI）】
+com/example/wifi_observer/
+├── platform/                                     (gateway の Android 実装 = アダプタ)
+│   ├── NetworkConnectivityImpl.kt                (ConnectivityManager)
+│   ├── NetworkNotifierImpl.kt                    (NotificationManager)
+│   ├── NotificationPermissionRepositoryImpl.kt   (POST_NOTIFICATIONS + DataStore)
+│   ├── NotificationPermissionRequestResultMapper.kt
+│   ├── ForegroundMonitoringService.kt            (FGS wrapper・監視 Job 管理)
+│   └── ForegroundMonitoringServiceController.kt  (BackgroundMonitoringService 実装)
+├── monitor/
+│   └── NetworkMonitor.kt                          (Facade。StateFlow で状態公開・Job 管理)
+├── viewmodel/
+│   ├── NetworkViewModel.kt                        (NetworkMonitor.status を UI 状態へ変換)
+│   ├── NetworkUiStatus.kt                         (UI モデル)
+│   ├── NetworkUiEffect.kt                         (単発 UI イベント)
+│   └── factory/NetworkViewModelFactory.kt
+├── ui/                                            (Jetpack Compose)
+│   ├── MainActivity.kt
+│   ├── theme/   components/network/
+│   └── NetworkScreen.kt / NetworkContentView.kt / NetworkActionLayout.kt / NetworkInitialView.kt
+├── di/AppContainer.kt
+└── WifiObserverApplication.kt
+
+【iOS ネイティブ層（将来 phase 4）】
+- platform（iosMain）: NWPathMonitor 版 NetworkConnectivityImpl、
+  UNUserNotificationCenter 版 NetworkNotifierImpl、
+  BGTaskScheduler + UserDefaults 統合の BackgroundMonitoringService 実装
+- 状態保持 Facade（NetworkMonitor 相当）と ViewModel は Swift でネイティブ実装
 ```
+
+### 1.1 なぜ NetworkMonitor / ViewModel を共通化しないか
+
+`NetworkMonitor` は監視結果を `status: StateFlow` として公開する Facade だが、Kotlin の `Flow` / `StateFlow` は Swift / Objective-C から直接購読できず、ブリッジ層（SKIE 等）を要する。`NetworkMonitor` はこの「Flow を境界に露出する」唯一の場所であり、共通化するとこの問題に直撃する。
+
+一方、WiFi→モバイル検知などの本質的な業務ロジックは `NetworkUseCase`（＝ `domain`）に集約済みで、`NetworkMonitor` の役割は「push（Presenter）→ pull（StateFlow）の橋渡し」と `Job` 管理のみ、すなわち状態保持＝プレゼンテーションの都合に過ぎない。
+
+したがって状態保持・ViewModel・UI は各プラットフォームのネイティブ層に置き、共通化は `domain/`（model・usecase・gateway）に限定する。なお `gateway` が返す `Flow`（例: `NetworkConnectivity.observeNetworkStatus()`）は `NetworkUseCase` 内部で collect されるだけで境界を越えないため、この制約には当たらない。
 
 ---
 
@@ -204,10 +225,11 @@ struct WifiObserverApp: App {
   - [x] `NotificationPermissionUseCase` / `NotificationPermissionRepository` による通知許可状態判定と DataStore 永続化の完了
   - [x] `ForegroundMonitoringService` による FGS 起動、監視 coroutine の `Job` 管理、`POST_NOTIFICATIONS` 権限対応の完了
   - [x] `NetworkViewModel` による `NetworkMonitor.status` の UI 状態変換の完了
-- [ ] **フェーズ 2: 共有モジュール (shared) の新設とコード抽出**
-  - [ ] `shared` マルチプラットフォームモジュールを Gradle に作成
-  - [ ] `NetworkStatus`, `NetworkMonitoringStatus`, `NotificationPermissionStatus`, `NetworkConnectivity`, `NotificationPermissionRepository`, `NetworkNotificationPresenter`, `NotificationPermissionPresenter`, `NetworkStatusPresenter`, `BackgroundMonitoringService` を `commonMain` に移動
-  - [ ] `NetworkUseCase`, `NotificationPermissionUseCase`, `NetworkMonitor`, `NetworkViewModel` を `commonMain` に移動
+- [ ] **フェーズ 2: パッケージ整理と共有モジュール (shared) の新設**
+  - [ ] プラットフォーム非依存コードを `domain/{model,usecase,gateway}` に再配置し、状態保持(`monitor`)・`viewmodel`・`ui` をネイティブ層へ分離
+  - [ ] `shared` マルチプラットフォームモジュールを Gradle に作成（当面 androidTarget のみ。iOS は phase 4）
+  - [ ] `domain/`（`model` / `usecase` / `gateway`）を `commonMain` へ移動
+  - [ ] `monitor`(`NetworkMonitor`)・`viewmodel`(`NetworkViewModel` / `NetworkUiStatus` / `NetworkUiEffect`)・`ui`・`platform` 実装は `:app`（Android ネイティブ）に残置
 - [ ] **フェーズ 3: 状態永続化の共通化**
   - [ ] `multiplatform-settings` の依存追加
   - [ ] `NetworkUseCase.observe()` の `previousStatus` 初期値を `Settings` ストアから復元する形に拡張

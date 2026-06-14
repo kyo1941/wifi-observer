@@ -1,4 +1,4 @@
-package com.example.wifi_observer
+package com.example.wifi_observer.ui
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column

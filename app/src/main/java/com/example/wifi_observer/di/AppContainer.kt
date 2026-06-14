@@ -2,17 +2,17 @@ package com.example.wifi_observer.di
 
 import android.content.Context
 import android.net.ConnectivityManager
-import com.example.wifi_observer.NetworkMonitor
-import com.example.wifi_observer.NetworkUseCase
-import com.example.wifi_observer.NotificationPermissionUseCase
+import com.example.wifi_observer.domain.gateway.BackgroundMonitoringService
+import com.example.wifi_observer.domain.gateway.NetworkConnectivity
+import com.example.wifi_observer.domain.gateway.NetworkNotifier
+import com.example.wifi_observer.domain.gateway.NotificationPermissionRepository
+import com.example.wifi_observer.domain.usecase.NetworkUseCase
+import com.example.wifi_observer.domain.usecase.NotificationPermissionUseCase
+import com.example.wifi_observer.monitor.NetworkMonitor
 import com.example.wifi_observer.platform.ForegroundMonitoringServiceController
 import com.example.wifi_observer.platform.NetworkConnectivityImpl
 import com.example.wifi_observer.platform.NetworkNotifierImpl
 import com.example.wifi_observer.platform.NotificationPermissionRepositoryImpl
-import com.example.wifi_observer.platform.interfaces.BackgroundMonitoringService
-import com.example.wifi_observer.platform.interfaces.NetworkConnectivity
-import com.example.wifi_observer.platform.interfaces.NetworkNotifier
-import com.example.wifi_observer.platform.interfaces.NotificationPermissionRepository
 
 class AppContainer(
     context: Context,

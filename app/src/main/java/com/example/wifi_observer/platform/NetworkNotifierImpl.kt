@@ -6,7 +6,7 @@ import android.content.Context
 import android.os.Build
 import androidx.core.app.NotificationCompat
 import com.example.wifi_observer.R
-import com.example.wifi_observer.platform.interfaces.NetworkNotifier
+import com.example.wifi_observer.domain.gateway.NetworkNotifier
 
 class NetworkNotifierImpl(
     private val context: Context,

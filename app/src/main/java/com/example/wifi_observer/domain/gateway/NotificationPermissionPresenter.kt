@@ -1,4 +1,4 @@
-package com.example.wifi_observer.viewmodel
+package com.example.wifi_observer.domain.gateway
 
 interface NotificationPermissionPresenter {
     fun requestNotificationPermission()

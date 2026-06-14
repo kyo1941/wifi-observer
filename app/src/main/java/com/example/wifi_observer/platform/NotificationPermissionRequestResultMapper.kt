@@ -1,6 +1,6 @@
 package com.example.wifi_observer.platform
 
-import com.example.wifi_observer.model.NotificationPermissionRequestResult
+import com.example.wifi_observer.domain.model.NotificationPermissionRequestResult
 
 fun notificationPermissionRequestResult(
     isGranted: Boolean,

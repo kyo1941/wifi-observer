@@ -1,4 +1,4 @@
-package com.example.wifi_observer.components.network
+package com.example.wifi_observer.ui.components.network
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -19,7 +19,9 @@ import androidx.compose.ui.unit.dp
  */
 sealed interface BadgeContent {
     /** アイコンを表示する。 */
-    data class Icon(val painter: Painter) : BadgeContent
+    data class Icon(
+        val painter: Painter,
+    ) : BadgeContent
 
     /** 不定進捗のインジケーターを表示する。 */
     data object Progress : BadgeContent

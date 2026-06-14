@@ -1,10 +1,10 @@
-package com.example.wifi_observer
+package com.example.wifi_observer.domain.usecase
 
-import com.example.wifi_observer.model.NetworkMonitoringStatus
-import com.example.wifi_observer.model.NetworkStatus
-import com.example.wifi_observer.platform.interfaces.NetworkConnectivity
-import com.example.wifi_observer.platform.interfaces.NetworkNotificationPresenter
-import com.example.wifi_observer.viewmodel.NetworkStatusPresenter
+import com.example.wifi_observer.domain.gateway.NetworkConnectivity
+import com.example.wifi_observer.domain.gateway.NetworkNotificationPresenter
+import com.example.wifi_observer.domain.gateway.NetworkStatusPresenter
+import com.example.wifi_observer.domain.model.NetworkMonitoringStatus
+import com.example.wifi_observer.domain.model.NetworkStatus
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.TimeMark
 import kotlin.time.TimeSource

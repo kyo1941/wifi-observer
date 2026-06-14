@@ -2,8 +2,8 @@ package com.example.wifi_observer.viewmodel.factory
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
-import com.example.wifi_observer.NetworkMonitor
-import com.example.wifi_observer.NotificationPermissionUseCase
+import com.example.wifi_observer.domain.usecase.NotificationPermissionUseCase
+import com.example.wifi_observer.monitor.NetworkMonitor
 import com.example.wifi_observer.viewmodel.NetworkViewModel
 
 class NetworkViewModelFactory(

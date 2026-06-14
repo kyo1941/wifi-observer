@@ -1,7 +1,7 @@
 package com.example.wifi_observer.fake
 
-import com.example.wifi_observer.model.NetworkMonitoringStatus
-import com.example.wifi_observer.viewmodel.NetworkStatusPresenter
+import com.example.wifi_observer.domain.model.NetworkMonitoringStatus
+import com.example.wifi_observer.domain.gateway.NetworkStatusPresenter
 
 /**
  * 受け取った状態更新を記録する Fake

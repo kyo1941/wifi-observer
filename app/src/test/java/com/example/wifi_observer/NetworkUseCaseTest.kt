@@ -3,8 +3,9 @@ package com.example.wifi_observer
 import com.example.wifi_observer.fake.FakeNetworkConnectivity
 import com.example.wifi_observer.fake.FakeNetworkNotificationPresenter
 import com.example.wifi_observer.fake.FakeNetworkStatusPresenter
-import com.example.wifi_observer.model.NetworkMonitoringStatus
-import com.example.wifi_observer.model.NetworkStatus
+import com.example.wifi_observer.domain.model.NetworkMonitoringStatus
+import com.example.wifi_observer.domain.model.NetworkStatus
+import com.example.wifi_observer.domain.usecase.NetworkUseCase
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope

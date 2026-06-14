@@ -26,13 +26,14 @@ Android 7以降、バックグラウンドアプリへの `CONNECTIVITY_CHANGE` 
 |----|------|---------------|
 | ビジネスロジック | `NetworkUseCase` | `commonMain` |
 | 監視インターフェース | `NetworkConnectivity` | `commonMain` |
+| 通知発火インターフェース | `NetworkNotifier` | `commonMain` |
 | 通知許可Repositoryインターフェース | `NotificationPermissionRepository` | `commonMain` |
 | 通知Presenterインターフェース | `NetworkNotificationPresenter` | `commonMain` |
 | 通知許可Presenterインターフェース | `NotificationPermissionPresenter` | `commonMain` |
 | UI更新Presenterインターフェース | `NetworkStatusPresenter` | `commonMain` |
 | バックグラウンド実行インターフェース | `BackgroundMonitoringService` | `commonMain` |
-| 監視Facade | `NetworkMonitor` | `commonMain` |
 | 通知許可ユースケース | `NotificationPermissionUseCase` | `commonMain` |
+| 監視Facade（StateFlow 公開） | `NetworkMonitor` | ネイティブ層（`:app` / 将来 iOS）。Flow を境界に露出するため共通化しない |
 | Android 実装 | `NetworkConnectivityImpl`, `NetworkNotifierImpl`, `NotificationPermissionRepositoryImpl`, `ForegroundMonitoringService`, `ForegroundMonitoringServiceController` | `androidMain` |
 | iOS 実装 | `NetworkConnectivityImpl`, `NetworkNotifierImpl`, `BackgroundMonitoringServiceImpl` | `iosMain` |
 

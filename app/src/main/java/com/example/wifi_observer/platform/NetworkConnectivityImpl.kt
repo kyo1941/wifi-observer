@@ -3,8 +3,8 @@ package com.example.wifi_observer.platform
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
-import com.example.wifi_observer.model.NetworkStatus
-import com.example.wifi_observer.platform.interfaces.NetworkConnectivity
+import com.example.wifi_observer.domain.gateway.NetworkConnectivity
+import com.example.wifi_observer.domain.model.NetworkStatus
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow

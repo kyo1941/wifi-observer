@@ -1,4 +1,4 @@
-package com.example.wifi_observer
+package com.example.wifi_observer.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
@@ -19,6 +19,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.wifi_observer.R
 import com.example.wifi_observer.viewmodel.NetworkViewModel
 import com.example.wifi_observer.viewmodel.UiState
 
