@@ -1,10 +1,11 @@
-package com.example.wifi_observer
+package com.example.wifi_observer.monitor
 
-import com.example.wifi_observer.model.NetworkMonitoringStatus
-import com.example.wifi_observer.platform.NetworkNotifierImpl
-import com.example.wifi_observer.platform.interfaces.BackgroundMonitoringService
-import com.example.wifi_observer.platform.interfaces.NetworkNotificationPresenter
-import com.example.wifi_observer.viewmodel.NetworkStatusPresenter
+import com.example.wifi_observer.domain.gateway.BackgroundMonitoringService
+import com.example.wifi_observer.domain.gateway.NetworkNotificationPresenter
+import com.example.wifi_observer.domain.gateway.NetworkNotifier
+import com.example.wifi_observer.domain.gateway.NetworkStatusPresenter
+import com.example.wifi_observer.domain.model.NetworkMonitoringStatus
+import com.example.wifi_observer.domain.usecase.NetworkUseCase
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -13,7 +14,7 @@ import kotlinx.coroutines.flow.asStateFlow
 
 class NetworkMonitor(
     private val networkUseCase: NetworkUseCase,
-    private val networkNotifier: NetworkNotifierImpl,
+    private val networkNotifier: NetworkNotifier,
     private val backgroundMonitoringService: BackgroundMonitoringService,
 ) : NetworkNotificationPresenter,
     NetworkStatusPresenter {

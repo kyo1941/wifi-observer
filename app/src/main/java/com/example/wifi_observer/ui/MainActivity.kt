@@ -1,4 +1,4 @@
-package com.example.wifi_observer
+package com.example.wifi_observer.ui
 
 import android.Manifest
 import android.os.Build
@@ -18,6 +18,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.wifi_observer.R
+import com.example.wifi_observer.WifiObserverApplication
 import com.example.wifi_observer.platform.notificationPermissionRequestResult
 import com.example.wifi_observer.ui.theme.WifiobserverTheme
 import com.example.wifi_observer.viewmodel.NetworkUiEffect

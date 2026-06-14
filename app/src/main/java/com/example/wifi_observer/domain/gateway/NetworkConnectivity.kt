@@ -1,6 +1,6 @@
-package com.example.wifi_observer.platform.interfaces
+package com.example.wifi_observer.domain.gateway
 
-import com.example.wifi_observer.model.NetworkStatus
+import com.example.wifi_observer.domain.model.NetworkStatus
 import kotlinx.coroutines.flow.Flow
 
 interface NetworkConnectivity {

@@ -9,10 +9,10 @@ import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
-import com.example.wifi_observer.NetworkMonitor
 import com.example.wifi_observer.R
 import com.example.wifi_observer.WifiObserverApplication
-import com.example.wifi_observer.platform.interfaces.BackgroundMonitoringService
+import com.example.wifi_observer.domain.gateway.BackgroundMonitoringService
+import com.example.wifi_observer.monitor.NetworkMonitor
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job

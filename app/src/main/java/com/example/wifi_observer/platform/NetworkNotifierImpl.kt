@@ -6,10 +6,11 @@ import android.content.Context
 import android.os.Build
 import androidx.core.app.NotificationCompat
 import com.example.wifi_observer.R
+import com.example.wifi_observer.domain.gateway.NetworkNotifier
 
 class NetworkNotifierImpl(
     private val context: Context,
-) {
+) : NetworkNotifier {
     companion object {
         const val CHANNEL_ID_ALERT = "wifi_to_mobile_alert"
         private const val NOTIFICATION_ID_ALERT = 2
@@ -19,7 +20,7 @@ class NetworkNotifierImpl(
         createAlertChannel()
     }
 
-    fun notifyWifiToMobile() {
+    override fun notifyWifiToMobile() {
         val notification =
             NotificationCompat
                 .Builder(context, CHANNEL_ID_ALERT)

@@ -11,8 +11,8 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.preferencesDataStore
-import com.example.wifi_observer.model.NotificationPermissionStatus
-import com.example.wifi_observer.platform.interfaces.NotificationPermissionRepository
+import com.example.wifi_observer.domain.gateway.NotificationPermissionRepository
+import com.example.wifi_observer.domain.model.NotificationPermissionStatus
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map

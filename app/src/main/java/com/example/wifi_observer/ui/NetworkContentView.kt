@@ -1,4 +1,4 @@
-package com.example.wifi_observer
+package com.example.wifi_observer.ui
 
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
@@ -6,9 +6,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
-import com.example.wifi_observer.components.network.BadgeContent
-import com.example.wifi_observer.components.network.NetworkIconTextButton
-import com.example.wifi_observer.components.network.NetworkStatusBadge
+import com.example.wifi_observer.R
+import com.example.wifi_observer.ui.components.network.BadgeContent
+import com.example.wifi_observer.ui.components.network.NetworkIconTextButton
+import com.example.wifi_observer.ui.components.network.NetworkStatusBadge
 import com.example.wifi_observer.ui.theme.StatusConnected
 import com.example.wifi_observer.ui.theme.StatusError
 import com.example.wifi_observer.ui.theme.StatusMobile

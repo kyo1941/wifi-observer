@@ -1,9 +1,9 @@
-package com.example.wifi_observer
+package com.example.wifi_observer.domain.usecase
 
-import com.example.wifi_observer.model.NotificationPermissionRequestResult
-import com.example.wifi_observer.model.NotificationPermissionStatus
-import com.example.wifi_observer.platform.interfaces.NotificationPermissionRepository
-import com.example.wifi_observer.viewmodel.NotificationPermissionPresenter
+import com.example.wifi_observer.domain.gateway.NotificationPermissionPresenter
+import com.example.wifi_observer.domain.gateway.NotificationPermissionRepository
+import com.example.wifi_observer.domain.model.NotificationPermissionRequestResult
+import com.example.wifi_observer.domain.model.NotificationPermissionStatus
 
 class NotificationPermissionUseCase(
     private val notificationPermissionRepository: NotificationPermissionRepository,

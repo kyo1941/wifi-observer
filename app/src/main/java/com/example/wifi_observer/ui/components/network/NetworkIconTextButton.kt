@@ -1,4 +1,4 @@
-package com.example.wifi_observer.components.network
+package com.example.wifi_observer.ui.components.network
 
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer

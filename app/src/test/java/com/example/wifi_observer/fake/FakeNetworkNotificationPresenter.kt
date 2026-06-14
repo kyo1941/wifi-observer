@@ -1,6 +1,6 @@
 package com.example.wifi_observer.fake
 
-import com.example.wifi_observer.platform.interfaces.NetworkNotificationPresenter
+import com.example.wifi_observer.domain.gateway.NetworkNotificationPresenter
 
 /**
  * 通知発火の回数を記録する Fake

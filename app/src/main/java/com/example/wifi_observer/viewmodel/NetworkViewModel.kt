@@ -2,11 +2,12 @@ package com.example.wifi_observer.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.wifi_observer.NetworkMonitor
-import com.example.wifi_observer.NotificationPermissionUseCase
-import com.example.wifi_observer.model.NetworkMonitoringStatus
-import com.example.wifi_observer.model.NetworkStatus
-import com.example.wifi_observer.model.NotificationPermissionRequestResult
+import com.example.wifi_observer.domain.gateway.NotificationPermissionPresenter
+import com.example.wifi_observer.domain.model.NetworkMonitoringStatus
+import com.example.wifi_observer.domain.model.NetworkStatus
+import com.example.wifi_observer.domain.model.NotificationPermissionRequestResult
+import com.example.wifi_observer.domain.usecase.NotificationPermissionUseCase
+import com.example.wifi_observer.monitor.NetworkMonitor
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow

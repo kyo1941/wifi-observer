@@ -1,4 +1,4 @@
-package com.example.wifi_observer.model
+package com.example.wifi_observer.domain.model
 
 sealed interface NotificationPermissionRequestResult {
     data object Granted : NotificationPermissionRequestResult
