@@ -24,4 +24,5 @@ dependencyResolutionManagement {
 
 rootProject.name = "wifi-observer"
 include(":app")
+include(":shared")
  

@@ -225,11 +225,11 @@ struct WifiObserverApp: App {
   - [x] `NotificationPermissionUseCase` / `NotificationPermissionRepository` による通知許可状態判定と DataStore 永続化の完了
   - [x] `ForegroundMonitoringService` による FGS 起動、監視 coroutine の `Job` 管理、`POST_NOTIFICATIONS` 権限対応の完了
   - [x] `NetworkViewModel` による `NetworkMonitor.status` の UI 状態変換の完了
-- [ ] **フェーズ 2: パッケージ整理と共有モジュール (shared) の新設**
-  - [ ] プラットフォーム非依存コードを `domain/{model,usecase,gateway}` に再配置し、状態保持(`monitor`)・`viewmodel`・`ui` をネイティブ層へ分離
-  - [ ] `shared` マルチプラットフォームモジュールを Gradle に作成（当面 androidTarget のみ。iOS は phase 4）
-  - [ ] `domain/`（`model` / `usecase` / `gateway`）を `commonMain` へ移動
-  - [ ] `monitor`(`NetworkMonitor`)・`viewmodel`(`NetworkViewModel` / `NetworkUiStatus` / `NetworkUiEffect`)・`ui`・`platform` 実装は `:app`（Android ネイティブ）に残置
+- [x] **フェーズ 2: パッケージ整理と共有モジュール (shared) の新設**
+  - [x] プラットフォーム非依存コードを `domain/{model,usecase,gateway}` に再配置し、状態保持(`monitor`)・`viewmodel`・`ui` をネイティブ層へ分離
+  - [x] `shared` マルチプラットフォームモジュールを Gradle に作成（当面 androidTarget のみ。iOS は phase 4）
+  - [x] `domain/`（`model` / `usecase` / `gateway`）を `commonMain` へ移動
+  - [x] `monitor`(`NetworkMonitor`)・`viewmodel`(`NetworkViewModel` / `NetworkUiStatus` / `NetworkUiEffect`)・`ui`・`platform` 実装は `:app`（Android ネイティブ）に残置
 - [ ] **フェーズ 3: 状態永続化の共通化**
   - [ ] `multiplatform-settings` の依存追加
   - [ ] `NetworkUseCase.observe()` の `previousStatus` 初期値を `Settings` ストアから復元する形に拡張
