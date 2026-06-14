@@ -73,87 +73,36 @@ com/example/wifi_observer/
 
 iOS では、バックグラウンドでのリアルタイム監視が制限されているため、`BGTaskScheduler` による定期評価（バッチ処理）の際に**「前回の状態」**を保持しておく必要があります。しかし、アプリのプロセスはタスク起動の都度新しく立ち上がるため、`observe()` コルーチンローカルの `previousStatus` 変数では状態を維持できません。
 
-この制約を解消するため、将来的な KMP 移行時には以下の永続化機構を組み込みます。
+### 責務の所在：永続化は iOS gateway の責務であり、common には持ち込まない
 
-### 永続化ライブラリの利用設計
-Android では、権限要求済みフラグの保存に Jetpack DataStore Preferences を利用します。DataStore は suspend / Flow ベースで扱えるため、Repository と UseCase の境界も suspend API として定義します。
+重要なのは、この永続化が必要なのは **iOS のバッチ監視モデルだけ** だという点である。Android は Foreground Service が `observe()` コルーチンを生かし続けるため、`previousStatus`（実装上は `lastConnectedType`）はコルーチンローカル変数のままで保持される。FGS が死んだ区間はそもそもリアルタイム監視が成立しないため、その間の Wifi → モバイル切り替えは永続化の有無に関わらず観測できない。よって **Android 側に永続化は不要** である。
 
-KMP 共通モジュールでキーバリュー型永続化を扱う場合は、**[multiplatform-settings](https://github.com/russhwolf/multiplatform-settings)** または KMP 対応 DataStore Preferences の導入を検討します。
+一方で、Wifi → モバイルの**検知ロジックそのものは `NetworkUseCase`（common）に集約したまま動かさない**（1.1 節）。検知を Swift / `iosMain` に再実装すると KMP 化の意義が失われる。
 
-- **Android 側**: DataStore Preferences にマッピング
-- **iOS 側**: `NSUserDefaults` 等にマッピング
+この 2 つを両立させる設計は、**「前回状態の復元」を iOS の `NetworkConnectivity` 実装（gateway の iOS アダプタ）の内部詳細として閉じ込める**ことである。`NetworkUseCase` には永続化ストアを注入しない（ガイド初期案の `Settings` 直接注入は採らない）。
 
-### 永続化を用いた状態検知フロー（共通ロジック化）
+- **Android 側**: 永続化なし。FGS 稼働中はコルーチンローカル変数が状態の源泉。
+- **iOS 側**: `NetworkConnectivityImpl`（`iosMain`）が `NSUserDefaults` に前回種別を保存・復元する。
 
-`NetworkUseCase` は、コルーチンローカルの `previousStatus` 変数のフォールバックとして、プラットフォームごとに注入される Key-Value 永続化ストア（`Settings` インターフェース）を参照し、バックグラウンド起動時にも正しく WiFi → モバイル の状態遷移を検知できるように設計します。
+### 永続化を用いた状態検知フロー（iOS gateway による前回状態の replay）
 
-UseCase は値や `Job` を返さず、Presenter 経由で外側へ通知します。監視 coroutine の起動と `Job` 管理は、Android では `ForegroundMonitoringService`、iOS では `BackgroundMonitoringServiceImpl` などの Platform 側が担当します。
+`NetworkUseCase` は **変更しない**。`NetworkConnectivity.observeNetworkStatus()` が返す `Flow` の**先頭に「前回状態」を流し、続けて「現在状態」を流す**ことで、既存の検知ロジックがそのまま `[前回, 現在]` の遷移として Wifi → モバイルを判定する。
 
-#### 状態チェックの疑似コード (共通ロジック):
-```kotlin
-class NetworkUseCase(
-    private val networkConnectivity: NetworkConnectivity,
-    private val settings: Settings // KMP 共通のキーバリュー永続化
-) {
-    companion object {
-        private const val KEY_LAST_KNOWN_STATUS = "last_known_network_status"
-    }
+iOS の `NetworkConnectivityImpl`（`iosMain`、phase 4）の責務：
 
-    suspend fun observe(
-        notificationPresenter: NetworkNotificationPresenter,
-        statusPresenter: NetworkStatusPresenter,
-    ) {
-        var previousStatus: NetworkStatus? = getLastKnownStatus()  // 永続化から復元
+1. `NSUserDefaults` から前回の接続種別を読み込み、最初に `NetworkStatus.Connected(前回種別)` を emit する（未保存なら省略）。
+2. 現在のネットワーク状態を取得して emit する。
+3. 現在の接続種別を `NSUserDefaults` に保存する（次回のバッチ起動に備える）。
 
-        networkConnectivity.observeNetworkStatus().collect { result ->
-            val current = result.getOrNull() ?: return@collect
+この設計の要点：
 
-            // WiFi → Mobile への切り替え検知
-            if (previousStatus is NetworkStatus.Connected &&
-                (previousStatus as NetworkStatus.Connected).type == NetworkStatus.NetworkType.Wifi &&
-                current is NetworkStatus.Connected &&
-                current.type == NetworkStatus.NetworkType.Mobile
-            ) {
-                notificationPresenter.displayNotification()
-            }
+- **common（`NetworkUseCase` / `domain`）は一切変更不要**。永続化ストアの注入も、Android 用のダミー実装も不要。
+- 永続化は完全に iOS platform（gateway 実装）の内部詳細に閉じる。
+- `NetworkUseCaseTest` は既に `[wifi, mobile]` のようなシーケンスを `FakeNetworkConnectivity.emit` で流して検知を検証しており、「前回 replay」はこの既存テストパターンそのもの。common 側に追加実装・追加テストは要らない。
 
-            // 永続化ストアに現在の接続情報を保存
-            saveStatus(current)
-            previousStatus = current
+UseCase は値や `Job` を返さず、Presenter 経由で外側へ通知する点は不変。監視 coroutine の起動と `Job` 管理は、Android では `ForegroundMonitoringService`、iOS では `BackgroundMonitoringServiceImpl` などの Platform 側が担当する。
 
-            statusPresenter.onNetworkStatusUpdated(result.toMonitoringStatus())
-        }
-    }
-
-    private fun Result<NetworkStatus>.toMonitoringStatus(): NetworkMonitoringStatus =
-        fold(
-            onSuccess = { status -> NetworkMonitoringStatus.Available(status) },
-            onFailure = { NetworkMonitoringStatus.Failed },
-        )
-
-    private fun getLastKnownStatus(): NetworkStatus? {
-        val typeString = settings.getStringOrNull(KEY_LAST_KNOWN_STATUS) ?: return null
-        return when (typeString) {
-            "WIFI" -> NetworkStatus.Connected(NetworkStatus.NetworkType.Wifi)
-            "MOBILE" -> NetworkStatus.Connected(NetworkStatus.NetworkType.Mobile)
-            "OTHER" -> NetworkStatus.Connected(NetworkStatus.NetworkType.Other)
-            else -> NetworkStatus.NotConnected
-        }
-    }
-
-    private fun saveStatus(status: NetworkStatus) {
-        val value = when (status) {
-            is NetworkStatus.Connected -> when (status.type) {
-                NetworkStatus.NetworkType.Wifi -> "WIFI"
-                NetworkStatus.NetworkType.Mobile -> "MOBILE"
-                NetworkStatus.NetworkType.Other -> "OTHER"
-            }
-            is NetworkStatus.NotConnected -> "NOT_CONNECTED"
-        }
-        settings.putString(KEY_LAST_KNOWN_STATUS, value)
-    }
-}
-```
+> NOTE: replay した「前回状態」も `statusPresenter.onNetworkStatusUpdated()` に渡る。iOS のバッチ起動時にはライブな UI が無いため実害はないが、iOS の `NetworkStatusPresenter` 実装はこの先頭 emission を UI 反映対象として扱わない想定。詳細は phase 4 で確定する。
 
 ---
 
@@ -230,9 +179,12 @@ struct WifiObserverApp: App {
   - [x] `shared` マルチプラットフォームモジュールを Gradle に作成（当面 androidTarget のみ。iOS は phase 4）
   - [x] `domain/`（`model` / `usecase` / `gateway`）を `commonMain` へ移動
   - [x] `monitor`(`NetworkMonitor`)・`viewmodel`(`NetworkViewModel` / `NetworkUiStatus` / `NetworkUiEffect`)・`ui`・`platform` 実装は `:app`（Android ネイティブ）に残置
-- [ ] **フェーズ 3: 状態永続化の共通化**
-  - [ ] `multiplatform-settings` の依存追加
-  - [ ] `NetworkUseCase.observe()` の `previousStatus` 初期値を `Settings` ストアから復元する形に拡張
+- [x] **フェーズ 3: 永続化の責務確定（設計の訂正）**
+  - [x] 永続化は iOS のバッチ監視モデル固有の要件であり、Android（FGS 稼働）には不要であることを確認
+  - [x] 検知ロジックは `NetworkUseCase`（common）に集約したまま動かさず、永続化を common に持ち込まない方針を確定
+  - [x] 「前回状態の復元」は iOS `NetworkConnectivityImpl` が `Flow` 先頭に前回状態を replay する形で gateway 内部に閉じる設計に決定（2 節を改訂）。phase 3 ではコード変更なし
+  - [x] ガイド初期案（`NetworkUseCase` への `Settings` 直接注入・`multiplatform-settings` 導入）は不採用とする
 - [ ] **フェーズ 4: iOS プラットフォーム実装の追加**
   - [ ] iOS `iosMain` において `NWPathMonitor` を用いた `NetworkConnectivityImpl` を実装
+  - [ ] 上記 `NetworkConnectivityImpl` に `NSUserDefaults` 永続化を内包し、バッチ起動時に前回の接続種別を `Flow` 先頭へ replay → 現在状態 emit → 現在種別を保存（2 節の設計）
   - [ ] iOS 用 `BackgroundMonitoringServiceImpl` にて `BGTaskScheduler` と `UserDefaults` の統合を実装（`NetworkNotificationPresenter` も実装）
