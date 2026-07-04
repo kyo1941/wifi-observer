@@ -187,4 +187,4 @@ struct WifiObserverApp: App {
 - [ ] **フェーズ 4: iOS プラットフォーム実装の追加**
   - [ ] iOS `iosMain` において `NWPathMonitor` を用いた `NetworkConnectivityImpl` を実装
   - [ ] 上記 `NetworkConnectivityImpl` に `NSUserDefaults` 永続化を内包し、バッチ起動時に前回の接続種別を `Flow` 先頭へ replay → 現在状態 emit → 現在種別を保存（2 節の設計）
-  - [ ] iOS 用 `BackgroundMonitoringServiceImpl` にて `BGTaskScheduler` と `UserDefaults` の統合を実装（`NetworkNotificationPresenter` も実装）
+  - [ ] iOS 用 `BackgroundMonitoringServiceImpl` にて `BGTaskScheduler` を実装し、状態の保存/復元は `NetworkConnectivityImpl` に委譲する（`NetworkNotificationPresenter` も実装）
