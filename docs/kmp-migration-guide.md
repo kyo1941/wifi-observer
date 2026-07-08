@@ -102,7 +102,7 @@ iOS の `NetworkConnectivityImpl`（`iosMain`、phase 4）の責務：
 
 UseCase は値や `Job` を返さず、Presenter 経由で外側へ通知する点は不変。監視 coroutine の起動と `Job` 管理は、Android では `ForegroundMonitoringService`、iOS では `BackgroundMonitoringServiceImpl` などの Platform 側が担当する。
 
-> NOTE: replay した「前回状態」も `statusPresenter.onNetworkStatusUpdated()` に渡る。iOS のバッチ起動時にはライブな UI が無いため実害はないが、iOS の `NetworkStatusPresenter` 実装はこの先頭 emission を UI 反映対象として扱わない想定。詳細は phase 4 で確定する。
+> NOTE: replay した「前回状態」も `statusPresenter.onNetworkStatusUpdated()` に渡る。かつてはこの replay がフォアグラウンド起動時（ライブ監視）にも走り、①UIのちらつき、②長時間オフライン後の古い遷移の誤通知、を起こしうる点が課題だったが、`NetworkConnectivityImpl`（iosMain）のコンストラクタ引数 `isBatchLaunch: Boolean` により解決済み（`isBatchLaunch = true` のバッチ起動時にのみ replay する。フォアグラウンド用途では `isBatchLaunch = false` を渡し、replay せず Android と同様に継続監視する）。呼び出し元（Swift 側 `AppContainer`/`BackgroundMonitoringServiceImpl`）がどちらの文脈かを知っているため、コンストラクタで明示的に渡す設計とした。iOS の `NetworkStatusPresenter` 実装（Swift、未着手）がこの先頭 emission をどう UI に反映するかは phase 4 の残タスクで確定する。
 
 ---
 
@@ -185,6 +185,7 @@ struct WifiObserverApp: App {
   - [x] 「前回状態の復元」は iOS `NetworkConnectivityImpl` が `Flow` 先頭に前回状態を replay する形で gateway 内部に閉じる設計に決定（2 節を改訂）。phase 3 ではコード変更なし
   - [x] ガイド初期案（`NetworkUseCase` への `Settings` 直接注入・`multiplatform-settings` 導入）は不採用とする
 - [ ] **フェーズ 4: iOS プラットフォーム実装の追加**
-  - [ ] iOS `iosMain` において `NWPathMonitor` を用いた `NetworkConnectivityImpl` を実装
-  - [ ] 上記 `NetworkConnectivityImpl` に `NSUserDefaults` 永続化を内包し、バッチ起動時に前回の接続種別を `Flow` 先頭へ replay → 現在状態 emit → 現在種別を保存（2 節の設計）
+  - [x] iOS `iosMain` において `NWPathMonitor`（`platform.Network` の C API）を用いた `NetworkConnectivityImpl` を実装（`shared/src/iosMain/kotlin/com/example/wifi_observer/platform/NetworkConnectivityImpl.kt`）
+  - [x] 上記 `NetworkConnectivityImpl` に `NSUserDefaults` 永続化を内包し、バッチ起動時に前回の接続種別を `Flow` 先頭へ replay → 現在状態 emit → 現在種別を保存（2 節の設計）。前回状態の replay をバッチ起動時に限定する既知の課題は、コンストラクタ引数 `isBatchLaunch: Boolean` の DI フラグで解決した（`isBatchLaunch = true` のときのみ replay し、現在値を1件受け取った時点で `Flow` を完了させて `BGTaskScheduler` の実行時間制約に収める。保存自体は `isBatchLaunch` に関わらず常に行う）
   - [ ] iOS 用 `BackgroundMonitoringServiceImpl` にて `BGTaskScheduler` を実装し、状態の保存/復元は `NetworkConnectivityImpl` に委譲する（`NetworkNotificationPresenter` も実装）
+  - [ ] Xcode プロジェクト・Swift 側（`AppContainer` 相当の DI、`NetworkNotifierImpl`、`NetworkMonitor`/ViewModel/UI のネイティブ実装）の追加
