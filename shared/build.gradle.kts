@@ -7,7 +7,7 @@ plugins {
 kotlin {
     jvmToolchain(11)
 
-    androidLibrary {
+    android {
         namespace = "com.example.wifi_observer.shared"
         compileSdk = 36
         minSdk = 24
