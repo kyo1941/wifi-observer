@@ -31,41 +31,51 @@ class NetworkConnectivityImpl(
     private val isBatchLaunch: Boolean,
     private val userDefaults: NSUserDefaults = NSUserDefaults.standardUserDefaults,
 ) : NetworkConnectivity {
-    override fun observeNetworkStatus(): Flow<Result<NetworkStatus>> =
-        callbackFlow {
-            if (isBatchLaunch) {
-                loadPreviousType()?.let { trySend(Result.success(NetworkStatus.Connected(it))) }
-            }
-
-            val queue = dispatch_queue_create("com.example.wifi_observer.network-monitor", null)
-            val monitor = nw_path_monitor_create()
-            nw_path_monitor_set_queue(monitor, queue)
-            nw_path_monitor_set_update_handler(monitor) { path ->
-                val status =
-                    if (nw_path_get_status(path) == nw_path_status_satisfied) {
-                        val type =
-                            when {
-                                nw_path_uses_interface_type(path, nw_interface_type_wifi) ->
-                                    NetworkStatus.NetworkType.Wifi
-                                nw_path_uses_interface_type(path, nw_interface_type_cellular) ->
-                                    NetworkStatus.NetworkType.Mobile
-                                else -> NetworkStatus.NetworkType.Other
-                            }
-                        NetworkStatus.Connected(type)
-                    } else {
-                        NetworkStatus.NotConnected
-                    }
-                trySend(Result.success(status))
-                when (status) {
-                    is NetworkStatus.Connected -> saveType(status.type)
-                    NetworkStatus.NotConnected -> {}
+    override fun observeNetworkStatus(): Flow<Result<NetworkStatus>> {
+        val rawStatus =
+            callbackFlow {
+                if (isBatchLaunch) {
+                    loadPreviousType()?.let { trySend(Result.success(NetworkStatus.Connected(it))) }
                 }
-                if (isBatchLaunch) close()
-            }
-            nw_path_monitor_start(monitor)
 
-            awaitClose { nw_path_monitor_cancel(monitor) }
-        }.distinctUntilChanged()
+                val queue = dispatch_queue_create("com.example.wifi_observer.network-monitor", null)
+                val monitor = nw_path_monitor_create()
+                nw_path_monitor_set_queue(monitor, queue)
+                nw_path_monitor_set_update_handler(monitor) { path ->
+                    val status =
+                        if (nw_path_get_status(path) == nw_path_status_satisfied) {
+                            val type =
+                                when {
+                                    nw_path_uses_interface_type(path, nw_interface_type_wifi) ->
+                                        NetworkStatus.NetworkType.Wifi
+                                    nw_path_uses_interface_type(path, nw_interface_type_cellular) ->
+                                        NetworkStatus.NetworkType.Mobile
+                                    else -> NetworkStatus.NetworkType.Other
+                                }
+                            NetworkStatus.Connected(type)
+                        } else {
+                            NetworkStatus.NotConnected
+                        }
+                    trySend(Result.success(status))
+                    when (status) {
+                        is NetworkStatus.Connected -> saveType(status.type)
+                        NetworkStatus.NotConnected -> {}
+                    }
+                    if (isBatchLaunch) close()
+                }
+                nw_path_monitor_start(monitor)
+
+                awaitClose {
+                    // update handler が ProducerScope(this) を捕捉したまま monitor に保持され続けると
+                    // 循環参照になりリークするため、cancel の前に参照を明示的に断ち切る
+                    nw_path_monitor_set_update_handler(monitor, null)
+                    nw_path_monitor_cancel(monitor)
+                }
+            }
+        // isBatchLaunch 時は replay と現在値が偶然一致すると distinctUntilChanged が
+        // 現在値の emission を握りつぶし「replay 後に現在値を1件emit」の契約が崩れるため適用しない
+        return if (isBatchLaunch) rawStatus else rawStatus.distinctUntilChanged()
+    }
 
     private fun loadPreviousType(): NetworkStatus.NetworkType? = userDefaults.stringForKey(PREVIOUS_TYPE_KEY)?.toNetworkType()
 
