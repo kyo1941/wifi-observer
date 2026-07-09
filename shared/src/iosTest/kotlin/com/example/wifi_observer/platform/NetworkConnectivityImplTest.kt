@@ -13,6 +13,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertNotEquals
+import kotlin.time.Duration.Companion.hours
 import kotlin.time.Duration.Companion.seconds
 
 /**
@@ -77,7 +78,8 @@ class NetworkConnectivityImplTest {
     @Test
     fun `isBatchLaunch が true でも保存済みの前回値が古すぎれば replay しない`() =
         runTest(timeout = 5.seconds) {
-            seedPreviousType(previousTypeMarker, secondsAgo = 120.0)
+            // NetworkConnectivityImpl の REPLAY_STALENESS_THRESHOLD(15分)を確実に超える値
+            seedPreviousType(previousTypeMarker, secondsAgo = 1.hours.inWholeSeconds.toDouble())
 
             val emissions = NetworkConnectivityImpl(isBatchLaunch = true).observeNetworkStatus().toList()
 

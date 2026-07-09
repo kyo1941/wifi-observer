@@ -2,6 +2,7 @@ package com.example.wifi_observer.platform
 
 import com.example.wifi_observer.domain.gateway.NetworkConnectivity
 import com.example.wifi_observer.domain.model.NetworkStatus
+import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.coroutines.Job
@@ -28,13 +29,6 @@ import platform.posix.time
 /**
  * NWPathMonitor(C API)でネットワーク接続状態の変化を監視する。
  * iOSのプロセスはバッチ実行(BGTaskScheduler)のたびに生成・破棄されるため、その前提の吸収もこのクラスにて行う。
- *
- * - [isBatchLaunch] が true の場合のみ、NSUserDefaults に保存した前回の接続種別と保存時刻を確認し、
- *   保存時刻が新しければ Flow 先頭で replay する。古すぎる場合は replay 自体を行わない
- * - isBatchLaunch 時は、NWPathMonitor起動直後の初期発火が安定するまで([SETTLE_WINDOW])待ち、
- *   最後に観測した値を現在値として1件emitしてFlowを完了させる
- *   (BGTaskScheduler の実行時間制約に収まるよう、呼び出し側でタイムアウト管理をせずに済ませるため)
- * - 保存(接続種別・保存時刻とも)は isBatchLaunch に関わらず常に行う
  */
 class NetworkConnectivityImpl(
     private val isBatchLaunch: Boolean,
@@ -44,6 +38,7 @@ class NetworkConnectivityImpl(
         val rawStatus =
             callbackFlow {
                 if (isBatchLaunch) {
+                    // 前回プロセスが保存した接続種別を Flow 先頭で replay する
                     loadPreviousTypeIfFresh()?.let { trySend(Result.success(NetworkStatus.Connected(it))) }
                 }
 
@@ -72,15 +67,17 @@ class NetworkConnectivityImpl(
                         trySend(Result.success(status))
                         when (status) {
                             is NetworkStatus.Connected -> saveType(status.type)
-                            NetworkStatus.NotConnected -> {}
+                            // 非接続を確認できた以上、以前保存した接続種別をそのままreplayに使うと実際にあった切断期間を無視してしまうため、ここで無効化する
+                            NetworkStatus.NotConnected -> clearPreviousType()
                         }
                     }
 
                     if (isBatchLaunch) {
+                        // NWPathMonitor は起動直後、確定していない値を連続して返すことがあるため、一定時間発火がなければ最後の値を確定値とみなす(デバウンス)
+                        // 確定後は BGTaskScheduler の実行時間制約に収まるよう Flow を完了させる
                         settleJob?.cancel()
                         settleJob =
                             launch {
-                                // NWPathMonitor は起動直後、確定していない値を連続して返すことがあるため、一定時間発火がなければ最後の値を確定値とみなす(デバウンス)
                                 delay(SETTLE_WINDOW)
                                 commit()
                                 close()
@@ -122,6 +119,11 @@ class NetworkConnectivityImpl(
         userDefaults.setDouble(nowEpochSeconds(), forKey = PREVIOUS_TYPE_SAVED_AT_KEY)
     }
 
+    private fun clearPreviousType() {
+        userDefaults.removeObjectForKey(PREVIOUS_TYPE_KEY)
+        userDefaults.removeObjectForKey(PREVIOUS_TYPE_SAVED_AT_KEY)
+    }
+
     @OptIn(ExperimentalForeignApi::class)
     private fun nowEpochSeconds(): Double = time(null).toDouble()
 
@@ -132,8 +134,11 @@ class NetworkConnectivityImpl(
         // NWPathMonitor起動直後の初期発火が安定するまで待つデバウンス時間
         private val SETTLE_WINDOW = 1.seconds
 
-        // 別バッチにて保存された前回の接続種別をreplayとして信用してよい期間
-        private val REPLAY_STALENESS_THRESHOLD = 60.seconds
+        // 別バッチにて保存された前回の接続種別をreplayとして信用してよい期間。
+        // NotConnectedの観測時点でclearPreviousType()により無効化されるため、この閾値が実際に効くのは「切断が一度も観測されないまま時間が経過した」場合のみ。
+        // BGTaskSchedulerの実起動間隔(OS裁量で15分〜数時間、それ以上空くこともある)に閾値を合わせるのではなく、
+        // 「これより古い情報を"たった今起きたこと"として通知するのは意味がない」というアプリ側の基準として決め、OSがこの時間内に起動しなければ 検知を諦める(通知しない)という意図的なトレードオフとする。
+        private val REPLAY_STALENESS_THRESHOLD = 15.minutes
     }
 }
 
