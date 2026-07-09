@@ -104,6 +104,18 @@ UseCase は値や `Job` を返さず、Presenter 経由で外側へ通知する�
 
 > NOTE: replay した「前回状態」も `statusPresenter.onNetworkStatusUpdated()` に渡る。かつてはこの replay がフォアグラウンド起動時（ライブ監視）にも走り、①UIのちらつき、②長時間オフライン後の古い遷移の誤通知、を起こしうる点が課題だったが、`NetworkConnectivityImpl`（iosMain）のコンストラクタ引数 `isBatchLaunch: Boolean` により解決済み（`isBatchLaunch = true` のバッチ起動時にのみ replay する。フォアグラウンド用途では `isBatchLaunch = false` を渡し、replay せず Android と同様に継続監視する）。呼び出し元（Swift 側 `AppContainer`/`BackgroundMonitoringServiceImpl`）がどちらの文脈かを知っているため、コンストラクタで明示的に渡す設計とした。iOS の `NetworkStatusPresenter` 実装（Swift、未着手）がこの先頭 emission をどう UI に反映するかは phase 4 の残タスクで確定する。
 
+### `NetworkUseCase` は「同一プロセス内の継続した系列」だけを扱う
+
+`NetworkUseCase.observe()` は元々「1回の呼び出し（＝1つの継続したプロセス実行）の中で流れてくる値の系列を見て、経過時間を管理し通知を判断する」という責務であり、これは今回のiOS対応でも一切変わらない。「バッチ内/バッチ外」という区分自体はcommonの語彙には存在せず、`NetworkUseCase`から見れば常に「いつも通りの1回の継続実行」でしかない。iOSだけが抱える「実行のたびにプロセスが生成・破棄される」という事情は、`NetworkUseCase`を呼び出す**前に** `NetworkConnectivityImpl`（iOS gateway）が責任を持って後始末しておくべきものであり、commonに一切漏らさない。
+
+この原則に基づき、②の長時間オフライン後の誤通知は次のように解決した（Androidの5秒grace = 継続監視中に発生する技術的アーティファクトの吸収、とは全く別の概念であることに注意）：
+
+- `NetworkConnectivityImpl` は前回の接続種別を保存する際、保存時刻（epoch秒）も併せて `NSUserDefaults` に保存する
+- `isBatchLaunch = true` でのreplay判断時、保存時刻が一定の閾値（iOS固有の定数。BGTaskSchedulerの起動間隔は通常これよりずっと長いため、値の厳密さ自体に実害は乏しい）より古ければ、**replayそのものを行わない**（`NetworkUseCase`は`lastConnectedType=null`から始まり、結果的に通知は発火しない）
+- 保存(接続種別・保存時刻とも)は `isBatchLaunch` に関わらず常に行う
+
+また、`NWPathMonitor` は起動直後に確定していない値を複数回連続して返すことがある（Apple Developer Forumsでも既知の挙動として報告されている）ため、`isBatchLaunch = true` の場合はNWPathMonitorの発火が一定時間（デバウンス窓）静止するまで待ち、最後に観測した値を確定値として扱ってから `Flow` を完了させる。これも`NetworkConnectivityImpl`内部だけで完結し、`NetworkUseCase`には一切影響しない。
+
 ---
 
 ## 3. DI (依存関係の注入) 設計
@@ -187,5 +199,6 @@ struct WifiObserverApp: App {
 - [ ] **フェーズ 4: iOS プラットフォーム実装の追加**
   - [x] iOS `iosMain` において `NWPathMonitor`（`platform.Network` の C API）を用いた `NetworkConnectivityImpl` を実装（`shared/src/iosMain/kotlin/com/example/wifi_observer/platform/NetworkConnectivityImpl.kt`）
   - [x] 上記 `NetworkConnectivityImpl` に `NSUserDefaults` 永続化を内包し、バッチ起動時に前回の接続種別を `Flow` 先頭へ replay → 現在状態 emit → 現在種別を保存（2 節の設計）。前回状態の replay をバッチ起動時に限定する既知の課題は、コンストラクタ引数 `isBatchLaunch: Boolean` の DI フラグで解決した（`isBatchLaunch = true` のときのみ replay し、現在値を1件受け取った時点で `Flow` を完了させて `BGTaskScheduler` の実行時間制約に収める。保存自体は `isBatchLaunch` に関わらず常に行う）
+  - [x] 長時間オフライン後にreplayされた古い前回状態で誤通知が発生する課題（PRレビュー指摘）を解決。保存時刻を `NSUserDefaults` に併記し、`isBatchLaunch` 時のreplayは保存時刻が新しい場合のみ行う（iOS固有の閾値。Androidの5秒grace-periodとは別概念、2節を参照）。また `NWPathMonitor` 起動直後の未確定な連続発火に対応するため、`isBatchLaunch` 時は一定時間の静止(デバウンス)を待ってから確定値として扱う
   - [ ] iOS 用 `BackgroundMonitoringServiceImpl` にて `BGTaskScheduler` を実装し、状態の保存/復元は `NetworkConnectivityImpl` に委譲する（`NetworkNotificationPresenter` も実装）
   - [ ] Xcode プロジェクト・Swift 側（`AppContainer` 相当の DI、`NetworkNotifierImpl`、`NetworkMonitor`/ViewModel/UI のネイティブ実装）の追加
