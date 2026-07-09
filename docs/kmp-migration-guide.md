@@ -102,7 +102,22 @@ iOS の `NetworkConnectivityImpl`（`iosMain`、phase 4）の責務：
 
 UseCase は値や `Job` を返さず、Presenter 経由で外側へ通知する点は不変。監視 coroutine の起動と `Job` 管理は、Android では `ForegroundMonitoringService`、iOS では `BackgroundMonitoringServiceImpl` などの Platform 側が担当する。
 
-> NOTE: replay した「前回状態」も `statusPresenter.onNetworkStatusUpdated()` に渡る。iOS のバッチ起動時にはライブな UI が無いため実害はないが、iOS の `NetworkStatusPresenter` 実装はこの先頭 emission を UI 反映対象として扱わない想定。詳細は phase 4 で確定する。
+> NOTE: replay した「前回状態」も `statusPresenter.onNetworkStatusUpdated()` に渡る。かつてはこの replay がフォアグラウンド起動時（ライブ監視）にも走り、①UIのちらつき、②長時間オフライン後の古い遷移の誤通知、を起こしうる点が課題だったが、`NetworkConnectivityImpl`（iosMain）のコンストラクタ引数 `isBatchLaunch: Boolean` により解決済み（`isBatchLaunch = true` のバッチ起動時にのみ replay する。フォアグラウンド用途では `isBatchLaunch = false` を渡し、replay せず Android と同様に継続監視する）。呼び出し元（Swift 側 `AppContainer`/`BackgroundMonitoringServiceImpl`）がどちらの文脈かを知っているため、コンストラクタで明示的に渡す設計とした。iOS の `NetworkStatusPresenter` 実装（Swift、未着手）がこの先頭 emission をどう UI に反映するかは phase 4 の残タスクで確定する。
+
+### `NetworkUseCase` は「同一プロセス内の継続した系列」だけを扱う
+
+`NetworkUseCase.observe()` は元々「1回の呼び出し（＝1つの継続したプロセス実行）の中で流れてくる値の系列を見て、経過時間を管理し通知を判断する」という責務であり、これは今回のiOS対応でも一切変わらない。「バッチ内/バッチ外」という区分自体はcommonの語彙には存在せず、`NetworkUseCase`から見れば常に「いつも通りの1回の継続実行」でしかない。iOSだけが抱える「実行のたびにプロセスが生成・破棄される」という事情は、`NetworkUseCase`を呼び出す**前に** `NetworkConnectivityImpl`（iOS gateway）が責任を持って後始末しておくべきものであり、commonに一切漏らさない。
+
+この原則に基づき、②の長時間オフライン後の誤通知は次のように解決した（Androidの5秒grace = 継続監視中に発生する技術的アーティファクトの吸収、とは全く別の概念であることに注意）：
+
+- `NetworkConnectivityImpl` は前回の接続種別を保存する際、保存時刻（epoch秒）も併せて `NSUserDefaults` に保存する
+- **`NotConnected` を観測した場合は、保存済みの接続種別を即座に無効化する**（主たる防御）。切断が確認された以上、それより前の接続種別をreplayに使うと確認済みの切断期間を無視してしまうため
+- `isBatchLaunch = true` でのreplay判断時、保存時刻が一定の閾値より古ければ、**replayそのものを行わない**（`NetworkUseCase`は`lastConnectedType=null`から始まり、結果的に通知は発火しない）。この閾値が実際に効くのは「切断が一度も観測されないまま時間が経過した」場合のみの保険的な位置づけ
+  - 閾値は**`BGTaskScheduler`の実起動間隔に合わせて決めるものではない**。実起動間隔はOSの裁量による機会主義的なもので15分〜数時間、それ以上（あるいは実行なし）もありうるため、これに閾値を合わせようとすると「何時間も前の出来事を"たった今"として通知する」ことを許容してしまい、通知自体の意味が失われる
+  - 代わりに「これより古い情報を通知に使うのは無意味」というアプリ側の基準（15分）を閾値とし、OSがこの時間内に起動しなければ検知を諦める（通知しない）という意図的なトレードオフを採る（PRレビューで最初に60秒→24時間と提案したが、いずれも上記の理由で不適切と判断し15分に変更した経緯がある）
+- 保存(接続種別・保存時刻とも)は `isBatchLaunch` に関わらず常に行う
+
+また、`NWPathMonitor` は起動直後に確定していない値を複数回連続して返すことがある（Apple Developer Forumsでも既知の挙動として報告されている）ため、`isBatchLaunch = true` の場合はNWPathMonitorの発火が一定時間（デバウンス窓）静止するまで待ち、最後に観測した値を確定値として扱ってから `Flow` を完了させる。これも`NetworkConnectivityImpl`内部だけで完結し、`NetworkUseCase`には一切影響しない。
 
 ---
 
@@ -185,6 +200,8 @@ struct WifiObserverApp: App {
   - [x] 「前回状態の復元」は iOS `NetworkConnectivityImpl` が `Flow` 先頭に前回状態を replay する形で gateway 内部に閉じる設計に決定（2 節を改訂）。phase 3 ではコード変更なし
   - [x] ガイド初期案（`NetworkUseCase` への `Settings` 直接注入・`multiplatform-settings` 導入）は不採用とする
 - [ ] **フェーズ 4: iOS プラットフォーム実装の追加**
-  - [ ] iOS `iosMain` において `NWPathMonitor` を用いた `NetworkConnectivityImpl` を実装
-  - [ ] 上記 `NetworkConnectivityImpl` に `NSUserDefaults` 永続化を内包し、バッチ起動時に前回の接続種別を `Flow` 先頭へ replay → 現在状態 emit → 現在種別を保存（2 節の設計）
+  - [x] iOS `iosMain` において `NWPathMonitor`（`platform.Network` の C API）を用いた `NetworkConnectivityImpl` を実装（`shared/src/iosMain/kotlin/com/example/wifi_observer/platform/NetworkConnectivityImpl.kt`）
+  - [x] 上記 `NetworkConnectivityImpl` に `NSUserDefaults` 永続化を内包し、バッチ起動時に前回の接続種別を `Flow` 先頭へ replay → 現在状態 emit → 現在種別を保存（2 節の設計）。前回状態の replay をバッチ起動時に限定する既知の課題は、コンストラクタ引数 `isBatchLaunch: Boolean` の DI フラグで解決した（`isBatchLaunch = true` のときのみ replay し、現在値を1件受け取った時点で `Flow` を完了させて `BGTaskScheduler` の実行時間制約に収める。保存自体は `isBatchLaunch` に関わらず常に行う）
+  - [x] 長時間オフライン後にreplayされた古い前回状態で誤通知が発生する課題（PRレビュー指摘）を解決。`NotConnected` 観測時に保存済み接続種別を即座に無効化するのを主たる防御とし、保存時刻（`NSUserDefaults`に併記）による閾値判定は「切断が一度も観測されなかった場合」の保険とする。閾値は`BGTaskScheduler`の実起動間隔に合わせるのではなく「これより古い情報は通知として無意味」というアプリ側の基準(15分)とし、OSの起動がそれより遅れた場合は検知を諦める意図的なトレードオフとした（2節を参照）。また `NWPathMonitor` 起動直後の未確定な連続発火に対応するため、`isBatchLaunch` 時は一定時間の静止(デバウンス)を待ってから確定値として扱う
   - [ ] iOS 用 `BackgroundMonitoringServiceImpl` にて `BGTaskScheduler` を実装し、状態の保存/復元は `NetworkConnectivityImpl` に委譲する（`NetworkNotificationPresenter` も実装）
+  - [ ] Xcode プロジェクト・Swift 側（`AppContainer` 相当の DI、`NetworkNotifierImpl`、`NetworkMonitor`/ViewModel/UI のネイティブ実装）の追加
