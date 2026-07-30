@@ -64,7 +64,11 @@ class BackgroundMonitoringServiceImpl(
     }
 
     override fun displayNotification() {
-        networkNotifier.notifyWifiToMobile()
+        // 判定から発火までは中断点がなく cancel が効かないため、停止と競合すると停止後に通知が出る。
+        // 停止を押した時点で通知は求められていないので、直前に検知した遷移でもここで捨てる
+        withStateLock {
+            if (isMonitoring) networkNotifier.notifyWifiToMobile()
+        }
     }
 
     internal suspend fun observeBatch() {

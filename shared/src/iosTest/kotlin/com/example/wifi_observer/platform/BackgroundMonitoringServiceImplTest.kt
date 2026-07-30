@@ -36,6 +36,8 @@ class BackgroundMonitoringServiceImplTest {
         init {
             val useCase = NetworkUseCase(connectivity, TestTimeSource())
             val service = BackgroundMonitoringServiceImpl(useCase, notifier)
+            // バッチは監視セッション中にしか走らないため、その前提を作ってから観測を始める
+            MonitoringSessionStore(NSUserDefaults.standardUserDefaults).beginSession()
             scope.backgroundScope.launch(UnconfinedTestDispatcher(scope.testScheduler)) {
                 service.observeBatch()
             }
@@ -134,6 +136,16 @@ class BackgroundMonitoringServiceImplTest {
         sessionStore.beginSession()
 
         assertNull(sessionStore.loadPreviousTypeIfFresh())
+    }
+
+    @Test
+    fun `セッションが終わっていれば通知しない`() {
+        val notifier = FakeNetworkNotifier()
+        val service = newService(notifier)
+
+        service.displayNotification()
+
+        assertEquals(0, notifier.notifyCount)
     }
 
     @Test
