@@ -20,11 +20,12 @@ class NetworkNotifierImpl(
                 setSound(UNNotificationSound.defaultSound)
             }
 
-        val request = UNNotificationRequest.requestWithIdentifier(
-            identifier = REQUEST_IDENTIFIER,
-            content = content,
-            trigger = null,
-        )
+        val request =
+            UNNotificationRequest.requestWithIdentifier(
+                identifier = REQUEST_IDENTIFIER,
+                content = content,
+                trigger = null,
+            )
 
         notificationCenter.addNotificationRequest(request, null)
     }

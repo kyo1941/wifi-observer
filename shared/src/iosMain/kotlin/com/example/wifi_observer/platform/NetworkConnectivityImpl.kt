@@ -2,8 +2,6 @@ package com.example.wifi_observer.platform
 
 import com.example.wifi_observer.domain.gateway.NetworkConnectivity
 import com.example.wifi_observer.domain.model.NetworkStatus
-import kotlin.time.Duration.Companion.minutes
-import kotlin.time.Duration.Companion.seconds
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.awaitClose
@@ -25,6 +23,8 @@ import platform.Network.nw_path_status_satisfied
 import platform.Network.nw_path_uses_interface_type
 import platform.darwin.dispatch_queue_create
 import platform.posix.time
+import kotlin.time.Duration.Companion.minutes
+import kotlin.time.Duration.Companion.seconds
 
 /**
  * NWPathMonitor(C API)でネットワーク接続状態の変化を監視する。

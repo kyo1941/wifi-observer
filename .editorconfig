@@ -10,3 +10,7 @@ insert_final_newline = true
 [*.{kt,kts}]
 indent_size = 4
 max_line_length = 120
+# applicationId 由来のパッケージ名 com.example.wifi_observer は変更できないため、アンダースコアの検査を外す
+ktlint_standard_package-name = disabled
+# Compose の Composable 関数は PascalCase が公式の規約であり、ktlint の camelCase 要求と両立しない
+ktlint_function_naming_ignore_when_annotated_with = Composable

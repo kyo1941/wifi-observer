@@ -94,7 +94,11 @@ class NetworkConnectivityImplTest {
             val emissions = NetworkConnectivityImpl(isBatchLaunch = true).observeNetworkStatus().toList()
             val current = emissions.first()
 
-            val savedType = NSUserDefaults.standardUserDefaults.stringForKey(NetworkConnectivityImpl.PREVIOUS_TYPE_KEY)?.toNetworkType()
+            val savedType =
+                NSUserDefaults.standardUserDefaults
+                    .stringForKey(
+                        NetworkConnectivityImpl.PREVIOUS_TYPE_KEY,
+                    )?.toNetworkType()
             val currentStatus = current.getOrThrow()
             assertIs<NetworkStatus.Connected>(currentStatus)
             assertEquals(currentStatus.type, savedType)
