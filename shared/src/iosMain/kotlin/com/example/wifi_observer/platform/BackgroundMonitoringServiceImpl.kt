@@ -50,23 +50,22 @@ class BackgroundMonitoringServiceImpl(
      * TODO: 予約に失敗しても呼び出し元に伝える手段がない。共通 interface の見直しを含め、UI への提示は task2 で対応する。
      **/
     override fun start() {
-        // 予約できていないのに監視中として復元され続けるのを避けるため、成立を確認してから保存する
-        if (!submitTaskRequest()) return
-        userDefaults.setBool(true, forKey = MONITORING_KEY)
+        withStateLock {
+            // 予約できていないのに監視中として復元され続けるのを避けるため、成立を確認してから保存する
+            if (submitTaskRequest()) {
+                userDefaults.setBool(true, forKey = MONITORING_KEY)
+            }
+        }
     }
 
     override fun stop() {
-        stateLock.lock()
-        try {
+        withStateLock {
             userDefaults.setBool(false, forKey = MONITORING_KEY)
+            BGTaskScheduler.sharedScheduler.cancelTaskRequestWithIdentifier(TASK_IDENTIFIER)
             // 取り消せるのは保留中の予約だけで、実行中のバッチはそのまま検知・通知しうるため明示的に止める
             observeJob?.cancel()
             observeJob = null
-        } finally {
-            stateLock.unlock()
         }
-
-        BGTaskScheduler.sharedScheduler.cancelTaskRequestWithIdentifier(TASK_IDENTIFIER)
     }
 
     override fun displayNotification() {
@@ -86,14 +85,9 @@ class BackgroundMonitoringServiceImpl(
         if (task == null) return
 
         val job =
-            stateLock.let { lock ->
-                lock.lock()
-                try {
-                    // stop() 後も OS は投入済みの予約を起こしうるため、ここで監視状態を確認して再投入の連鎖を断つ
-                    if (isMonitoring) startNextBatchCycle() else null
-                } finally {
-                    lock.unlock()
-                }
+            withStateLock {
+                // stop() 後も OS は投入済みの予約を起こしうるため、ここで監視状態を確認して再投入の連鎖を断つ
+                if (isMonitoring) startNextBatchCycle() else null
             }
 
         if (job == null) {
@@ -117,6 +111,15 @@ class BackgroundMonitoringServiceImpl(
     @OptIn(ExperimentalForeignApi::class)
     private fun submitTaskRequest(): Boolean =
         BGTaskScheduler.sharedScheduler.submitTaskRequest(BGAppRefreshTaskRequest(TASK_IDENTIFIER), null)
+
+    private inline fun <T> withStateLock(block: () -> T): T {
+        stateLock.lock()
+        try {
+            return block()
+        } finally {
+            stateLock.unlock()
+        }
+    }
 
     companion object {
         const val TASK_IDENTIFIER = "com.example.wifi_observer.network-monitoring-refresh"
