@@ -83,6 +83,18 @@ class BackgroundMonitoringServiceImplTest {
     }
 
     /**
+     * テストホストでは submitTaskRequest が常に失敗するため、予約が拒否される状況をそのまま再現できる。
+     */
+    @Test
+    fun `予約が拒否されれば監視中にしない`() {
+        val service = newService()
+
+        service.start()
+
+        assertFalse(service.isMonitoring)
+    }
+
+    /**
      * テストホストでは submitTaskRequest が失敗して予約が作られず、タスクの投入状態が再現できないため予約の取り消しは検証しない。
      */
     @Test
