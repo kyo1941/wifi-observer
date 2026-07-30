@@ -44,11 +44,12 @@ class BackgroundMonitoringServiceImplTest {
         suspend fun emit(status: NetworkStatus) = connectivity.emit(Result.success(status))
     }
 
+    private val sessionStore = MonitoringSessionStore(NSUserDefaults.standardUserDefaults)
+
     @BeforeTest
     @AfterTest
     fun clearPersistedState() {
-        NSUserDefaults.standardUserDefaults.removeObjectForKey(BackgroundMonitoringServiceImpl.MONITORING_KEY)
-        PreviousNetworkTypeStore(NSUserDefaults.standardUserDefaults).clear()
+        sessionStore.endSession()
     }
 
     @Test
@@ -73,13 +74,13 @@ class BackgroundMonitoringServiceImplTest {
         }
 
     @Test
-    fun `監視中フラグが未設定なら監視していないと判定する`() {
+    fun `セッションが始まっていなければ監視していないと判定する`() {
         assertFalse(newService().isMonitoring)
     }
 
     @Test
-    fun `監視中フラグが保存されていれば監視中と判定する`() {
-        NSUserDefaults.standardUserDefaults.setBool(true, forKey = BackgroundMonitoringServiceImpl.MONITORING_KEY)
+    fun `セッションが始まっていれば監視中と判定する`() {
+        sessionStore.beginSession()
 
         assertTrue(newService().isMonitoring)
     }
@@ -100,8 +101,8 @@ class BackgroundMonitoringServiceImplTest {
      * テストホストでは submitTaskRequest が失敗して予約が作られず、タスクの投入状態が再現できないため予約の取り消しは検証しない。
      */
     @Test
-    fun `stop すると監視中フラグを落とす`() {
-        NSUserDefaults.standardUserDefaults.setBool(true, forKey = BackgroundMonitoringServiceImpl.MONITORING_KEY)
+    fun `stop するとセッションを終える`() {
+        sessionStore.beginSession()
         val service = newService()
 
         service.stop()
@@ -111,13 +112,28 @@ class BackgroundMonitoringServiceImplTest {
 
     @Test
     fun `stop すると次回の遷移判定に使う基準値を捨てる`() {
-        val store = PreviousNetworkTypeStore(NSUserDefaults.standardUserDefaults)
-        store.save(NetworkStatus.NetworkType.Wifi)
+        sessionStore.beginSession()
+        sessionStore.savePreviousType(NetworkStatus.NetworkType.Wifi)
         val service = newService()
 
         service.stop()
 
-        assertNull(store.loadIfFresh())
+        sessionStore.beginSession()
+        assertNull(sessionStore.loadPreviousTypeIfFresh())
+    }
+
+    /**
+     * 終了処理が届かない経路(プロセスの終了、Swift が回す前面監視)で基準値が残った場合の保険が効いているかを見る。
+     */
+    @Test
+    fun `前のセッションで保存された基準値は新しいセッションでは使わない`() {
+        sessionStore.beginSession()
+        sessionStore.savePreviousType(NetworkStatus.NetworkType.Wifi)
+
+        // endSession を通らずにセッションだけが切り替わった状況
+        sessionStore.beginSession()
+
+        assertNull(sessionStore.loadPreviousTypeIfFresh())
     }
 
     @Test

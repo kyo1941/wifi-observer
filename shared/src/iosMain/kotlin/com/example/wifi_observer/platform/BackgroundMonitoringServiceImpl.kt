@@ -26,18 +26,18 @@ import kotlin.concurrent.Volatile
 class BackgroundMonitoringServiceImpl(
     private val networkUseCase: NetworkUseCase,
     private val networkNotifier: NetworkNotifier,
-    private val userDefaults: NSUserDefaults = NSUserDefaults.standardUserDefaults,
+    userDefaults: NSUserDefaults = NSUserDefaults.standardUserDefaults,
 ) : BackgroundMonitoringService,
     NetworkNotificationPresenter {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val stateLock = NSLock()
-    private val previousTypeStore = PreviousNetworkTypeStore(userDefaults)
+    private val sessionStore = MonitoringSessionStore(userDefaults)
 
     @Volatile
     private var observeJob: Job? = null
 
     val isMonitoring: Boolean
-        get() = userDefaults.boolForKey(MONITORING_KEY)
+        get() = sessionStore.isSessionActive
 
     fun register() {
         BGTaskScheduler.sharedScheduler.registerForTaskWithIdentifier(
@@ -52,23 +52,15 @@ class BackgroundMonitoringServiceImpl(
      **/
     override fun start() {
         withStateLock {
-            // 予約できていないのに監視中として復元され続けるのを避けるため、成立を確認してから保存する
+            // 予約できていないのに監視中として復元され続けるのを避けるため、成立を確認してから開始する
             if (submitTaskRequest()) {
-                userDefaults.setBool(true, forKey = MONITORING_KEY)
+                sessionStore.beginSession()
             }
         }
     }
 
     override fun stop() {
-        withStateLock {
-            userDefaults.setBool(false, forKey = MONITORING_KEY)
-            BGTaskScheduler.sharedScheduler.cancelTaskRequestWithIdentifier(TASK_IDENTIFIER)
-            // 取り消せるのは保留中の予約だけで、実行中のバッチはそのまま検知・通知しうるため明示的に止める
-            observeJob?.cancel()
-            observeJob = null
-            // 停止中の切り替えは観測できないため、再開後に停止前の種別から遷移したと誤判定しないよう基準を捨てる
-            previousTypeStore.clear()
-        }
+        withStateLock { endSession() }
     }
 
     override fun displayNotification() {
@@ -102,13 +94,23 @@ class BackgroundMonitoringServiceImpl(
         job.invokeOnCompletion { cause -> task.setTaskCompletedWithSuccess(cause == null) }
     }
 
-    private fun startNextBatchCycle(): Job {
+    private fun startNextBatchCycle(): Job? {
         // 1件の予約は1回しか実行されない。この実行中にプロセスが落ちても次回が残るよう、観測の完了を待たずに先に予約する
         if (!submitTaskRequest()) {
-            // 次回の予約が取れなかった時点で連鎖は途切れ、以後の検知は走らない。監視中を騙り続けないよう状態を降ろす
-            userDefaults.setBool(false, forKey = MONITORING_KEY)
+            // 次回の予約が取れない以上この先の検知は走らないため、このバッチは動かさずセッションを終える
+            endSession()
+            return null
         }
         return launchObserveBatch()
+    }
+
+    /** 監視セッションの終了はすべてここを通し、後始末の抜けを防ぐ。 */
+    private fun endSession() {
+        sessionStore.endSession()
+        BGTaskScheduler.sharedScheduler.cancelTaskRequestWithIdentifier(TASK_IDENTIFIER)
+        // 取り消せるのは保留中の予約だけで、実行中のバッチはそのまま検知・通知しうるため明示的に止める
+        observeJob?.cancel()
+        observeJob = null
     }
 
     @OptIn(ExperimentalForeignApi::class)
@@ -126,8 +128,6 @@ class BackgroundMonitoringServiceImpl(
 
     companion object {
         const val TASK_IDENTIFIER = "com.example.wifi_observer.network-monitoring-refresh"
-
-        internal const val MONITORING_KEY = "com.example.wifi_observer.is_monitoring"
     }
 }
 

@@ -1,12 +1,12 @@
 package com.example.wifi_observer.platform
 
 import com.example.wifi_observer.domain.model.NetworkStatus
-import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
+import platform.Foundation.NSDate
 import platform.Foundation.NSUserDefaults
-import platform.posix.time
+import platform.Foundation.timeIntervalSince1970
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
@@ -24,26 +24,37 @@ class NetworkConnectivityImplTest {
     // Mac / iOS シミュレータには携帯回線インターフェースが存在しないため、実測値が偶然この値と一致することは実質的にない前提で replay 検出の目印に使う。
     private val previousTypeMarker = NetworkStatus.NetworkType.Mobile
 
-    @OptIn(ExperimentalForeignApi::class)
+    private val sessionStore = MonitoringSessionStore(NSUserDefaults.standardUserDefaults)
+
+    /**
+     * 保存済みの前回値を用意する。replay は今のセッションで保存された値だけを対象とするため、
+     * セッションの開始時刻も併せて値より前へずらし、鮮度以外の理由で弾かれないようにする。
+     */
     private fun seedPreviousType(
         type: NetworkStatus.NetworkType,
         secondsAgo: Double = 0.0,
     ) {
+        val savedAt = NSDate().timeIntervalSince1970 - secondsAgo
         NSUserDefaults.standardUserDefaults.setObject(
             type.toStorageValue(),
-            forKey = PreviousNetworkTypeStore.TYPE_KEY,
+            forKey = MonitoringSessionStore.TYPE_KEY,
         )
+        NSUserDefaults.standardUserDefaults.setDouble(savedAt, forKey = MonitoringSessionStore.SAVED_AT_KEY)
         NSUserDefaults.standardUserDefaults.setDouble(
-            time(null).toDouble() - secondsAgo,
-            forKey = PreviousNetworkTypeStore.SAVED_AT_KEY,
+            savedAt - 60.0,
+            forKey = MonitoringSessionStore.SESSION_STARTED_AT_KEY,
         )
     }
 
     @BeforeTest
+    fun beginSession() {
+        sessionStore.endSession()
+        sessionStore.beginSession()
+    }
+
     @AfterTest
     fun clearPersistedState() {
-        NSUserDefaults.standardUserDefaults.removeObjectForKey(PreviousNetworkTypeStore.TYPE_KEY)
-        NSUserDefaults.standardUserDefaults.removeObjectForKey(PreviousNetworkTypeStore.SAVED_AT_KEY)
+        sessionStore.endSession()
     }
 
     @Test
@@ -78,8 +89,19 @@ class NetworkConnectivityImplTest {
     @Test
     fun `isBatchLaunch が true でも保存済みの前回値が古すぎれば replay しない`() =
         runTest(timeout = 5.seconds) {
-            // PreviousNetworkTypeStore の STALENESS_THRESHOLD(15分)を確実に超える値
+            // MonitoringSessionStore の STALENESS_THRESHOLD(15分)を確実に超える値
             seedPreviousType(previousTypeMarker, secondsAgo = 1.hours.inWholeSeconds.toDouble())
+
+            val emissions = NetworkConnectivityImpl(isBatchLaunch = true).observeNetworkStatus().toList()
+
+            assertEquals(1, emissions.size)
+        }
+
+    @Test
+    fun `isBatchLaunch が true でも時刻が巻き戻っていれば replay しない`() =
+        runTest(timeout = 5.seconds) {
+            // 巻き戻ると保存時刻が現在より後になり、経過時間が負になる。それが期限切れ判定をすり抜けないことを見る
+            seedPreviousType(previousTypeMarker, secondsAgo = -1.hours.inWholeSeconds.toDouble())
 
             val emissions = NetworkConnectivityImpl(isBatchLaunch = true).observeNetworkStatus().toList()
 
@@ -97,7 +119,7 @@ class NetworkConnectivityImplTest {
             val savedType =
                 NSUserDefaults.standardUserDefaults
                     .stringForKey(
-                        PreviousNetworkTypeStore.TYPE_KEY,
+                        MonitoringSessionStore.TYPE_KEY,
                     )?.toNetworkType()
             val currentStatus = current.getOrThrow()
             assertIs<NetworkStatus.Connected>(currentStatus)

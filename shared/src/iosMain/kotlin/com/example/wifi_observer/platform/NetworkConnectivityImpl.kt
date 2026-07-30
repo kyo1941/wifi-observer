@@ -31,14 +31,14 @@ class NetworkConnectivityImpl(
     private val isBatchLaunch: Boolean,
     userDefaults: NSUserDefaults = NSUserDefaults.standardUserDefaults,
 ) : NetworkConnectivity {
-    private val previousTypeStore = PreviousNetworkTypeStore(userDefaults)
+    private val sessionStore = MonitoringSessionStore(userDefaults)
 
     override fun observeNetworkStatus(): Flow<Result<NetworkStatus>> {
         val rawStatus =
             callbackFlow {
                 if (isBatchLaunch) {
                     // 前回プロセスが保存した接続種別を Flow 先頭で replay する
-                    previousTypeStore.loadIfFresh()?.let { trySend(Result.success(NetworkStatus.Connected(it))) }
+                    sessionStore.loadPreviousTypeIfFresh()?.let { trySend(Result.success(NetworkStatus.Connected(it))) }
                 }
 
                 val queue = dispatch_queue_create("com.example.wifi_observer.network-monitor", null)
@@ -65,9 +65,9 @@ class NetworkConnectivityImpl(
                     fun commit() {
                         trySend(Result.success(status))
                         when (status) {
-                            is NetworkStatus.Connected -> previousTypeStore.save(status.type)
+                            is NetworkStatus.Connected -> sessionStore.savePreviousType(status.type)
                             // 非接続を確認できた以上、以前保存した接続種別をそのままreplayに使うと実際にあった切断期間を無視してしまうため、ここで無効化する
-                            NetworkStatus.NotConnected -> previousTypeStore.clear()
+                            NetworkStatus.NotConnected -> sessionStore.clearPreviousType()
                         }
                     }
 

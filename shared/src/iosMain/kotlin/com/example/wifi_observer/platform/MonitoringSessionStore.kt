@@ -1,49 +1,68 @@
 package com.example.wifi_observer.platform
 
 import com.example.wifi_observer.domain.model.NetworkStatus
-import kotlinx.cinterop.ExperimentalForeignApi
+import platform.Foundation.NSDate
 import platform.Foundation.NSUserDefaults
-import platform.posix.time
+import platform.Foundation.timeIntervalSince1970
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
 
 /**
- * 直前に観測した接続種別を保持する。
+ * 監視セッションと、そのセッション中に直前に観測した接続種別を保持する。
  *
  * iOS ではバッチ実行のたびにプロセスが作り直され、遷移の判定に必要な直前の値がメモリ上に残らないため永続化する。
  */
-internal class PreviousNetworkTypeStore(
+internal class MonitoringSessionStore(
     private val userDefaults: NSUserDefaults,
 ) {
-    fun loadIfFresh(): NetworkStatus.NetworkType? {
-        if (userDefaults.objectForKey(SAVED_AT_KEY) == null) {
+    val isSessionActive: Boolean
+        get() = userDefaults.objectForKey(SESSION_STARTED_AT_KEY) != null
+
+    fun beginSession() {
+        userDefaults.setDouble(nowEpochSeconds(), forKey = SESSION_STARTED_AT_KEY)
+    }
+
+    fun endSession() {
+        userDefaults.removeObjectForKey(SESSION_STARTED_AT_KEY)
+        clearPreviousType()
+    }
+
+    fun loadPreviousTypeIfFresh(): NetworkStatus.NetworkType? {
+        if (!isSessionActive || userDefaults.objectForKey(SAVED_AT_KEY) == null) {
             return null
         }
 
         val savedAt = userDefaults.doubleForKey(SAVED_AT_KEY)
-        val elapsed = (nowEpochSeconds() - savedAt).seconds
 
-        if (elapsed > STALENESS_THRESHOLD) {
+        // 終了処理が届かない経路(プロセスの終了、Swift が回す前面監視の観測)では基準値が残りうるため、今のセッションで保存された値かをここでも確かめる
+        if (savedAt < userDefaults.doubleForKey(SESSION_STARTED_AT_KEY)) {
+            return null
+        }
+
+        // 端末の時計が保存後に巻き戻ると経過時間が負になり、そのままでは時計が追いつくまで期限切れにならない
+        val elapsed = (nowEpochSeconds() - savedAt).seconds
+        if (elapsed.isNegative() || elapsed > STALENESS_THRESHOLD) {
             return null
         }
 
         return userDefaults.stringForKey(TYPE_KEY)?.toNetworkType()
     }
 
-    fun save(type: NetworkStatus.NetworkType) {
+    fun savePreviousType(type: NetworkStatus.NetworkType) {
         userDefaults.setObject(type.toStorageValue(), forKey = TYPE_KEY)
         userDefaults.setDouble(nowEpochSeconds(), forKey = SAVED_AT_KEY)
     }
 
-    fun clear() {
+    fun clearPreviousType() {
         userDefaults.removeObjectForKey(TYPE_KEY)
         userDefaults.removeObjectForKey(SAVED_AT_KEY)
     }
 
-    @OptIn(ExperimentalForeignApi::class)
-    private fun nowEpochSeconds(): Double = time(null).toDouble()
+    // セッションの開始と保存が同じ秒に収まると前後関係を判定できないため、秒未満まで持つ時刻を使う
+    private fun nowEpochSeconds(): Double = NSDate().timeIntervalSince1970
 
     companion object {
+        internal const val SESSION_STARTED_AT_KEY = "com.example.wifi_observer.monitoring_session_started_at"
         internal const val TYPE_KEY = "com.example.wifi_observer.previous_network_type"
         internal const val SAVED_AT_KEY = "com.example.wifi_observer.previous_network_type_saved_at"
 
