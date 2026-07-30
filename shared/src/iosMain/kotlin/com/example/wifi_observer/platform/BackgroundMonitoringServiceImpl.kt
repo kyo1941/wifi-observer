@@ -31,6 +31,7 @@ class BackgroundMonitoringServiceImpl(
     NetworkNotificationPresenter {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val stateLock = NSLock()
+    private val previousTypeStore = PreviousNetworkTypeStore(userDefaults)
 
     @Volatile
     private var observeJob: Job? = null
@@ -65,6 +66,8 @@ class BackgroundMonitoringServiceImpl(
             // 取り消せるのは保留中の予約だけで、実行中のバッチはそのまま検知・通知しうるため明示的に止める
             observeJob?.cancel()
             observeJob = null
+            // 停止中の切り替えは観測できないため、再開後に停止前の種別から遷移したと誤判定しないよう基準を捨てる
+            previousTypeStore.clear()
         }
     }
 

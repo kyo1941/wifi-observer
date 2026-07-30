@@ -15,6 +15,7 @@ import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.time.TestTimeSource
 
@@ -45,8 +46,9 @@ class BackgroundMonitoringServiceImplTest {
 
     @BeforeTest
     @AfterTest
-    fun clearMonitoringFlag() {
+    fun clearPersistedState() {
         NSUserDefaults.standardUserDefaults.removeObjectForKey(BackgroundMonitoringServiceImpl.MONITORING_KEY)
+        PreviousNetworkTypeStore(NSUserDefaults.standardUserDefaults).clear()
     }
 
     @Test
@@ -105,6 +107,17 @@ class BackgroundMonitoringServiceImplTest {
         service.stop()
 
         assertFalse(service.isMonitoring)
+    }
+
+    @Test
+    fun `stop すると次回の遷移判定に使う基準値を捨てる`() {
+        val store = PreviousNetworkTypeStore(NSUserDefaults.standardUserDefaults)
+        store.save(NetworkStatus.NetworkType.Wifi)
+        val service = newService()
+
+        service.stop()
+
+        assertNull(store.loadIfFresh())
     }
 
     @Test

@@ -31,19 +31,19 @@ class NetworkConnectivityImplTest {
     ) {
         NSUserDefaults.standardUserDefaults.setObject(
             type.toStorageValue(),
-            forKey = NetworkConnectivityImpl.PREVIOUS_TYPE_KEY,
+            forKey = PreviousNetworkTypeStore.TYPE_KEY,
         )
         NSUserDefaults.standardUserDefaults.setDouble(
             time(null).toDouble() - secondsAgo,
-            forKey = NetworkConnectivityImpl.PREVIOUS_TYPE_SAVED_AT_KEY,
+            forKey = PreviousNetworkTypeStore.SAVED_AT_KEY,
         )
     }
 
     @BeforeTest
     @AfterTest
     fun clearPersistedState() {
-        NSUserDefaults.standardUserDefaults.removeObjectForKey(NetworkConnectivityImpl.PREVIOUS_TYPE_KEY)
-        NSUserDefaults.standardUserDefaults.removeObjectForKey(NetworkConnectivityImpl.PREVIOUS_TYPE_SAVED_AT_KEY)
+        NSUserDefaults.standardUserDefaults.removeObjectForKey(PreviousNetworkTypeStore.TYPE_KEY)
+        NSUserDefaults.standardUserDefaults.removeObjectForKey(PreviousNetworkTypeStore.SAVED_AT_KEY)
     }
 
     @Test
@@ -78,7 +78,7 @@ class NetworkConnectivityImplTest {
     @Test
     fun `isBatchLaunch が true でも保存済みの前回値が古すぎれば replay しない`() =
         runTest(timeout = 5.seconds) {
-            // NetworkConnectivityImpl の REPLAY_STALENESS_THRESHOLD(15分)を確実に超える値
+            // PreviousNetworkTypeStore の STALENESS_THRESHOLD(15分)を確実に超える値
             seedPreviousType(previousTypeMarker, secondsAgo = 1.hours.inWholeSeconds.toDouble())
 
             val emissions = NetworkConnectivityImpl(isBatchLaunch = true).observeNetworkStatus().toList()
@@ -97,7 +97,7 @@ class NetworkConnectivityImplTest {
             val savedType =
                 NSUserDefaults.standardUserDefaults
                     .stringForKey(
-                        NetworkConnectivityImpl.PREVIOUS_TYPE_KEY,
+                        PreviousNetworkTypeStore.TYPE_KEY,
                     )?.toNetworkType()
             val currentStatus = current.getOrThrow()
             assertIs<NetworkStatus.Connected>(currentStatus)
