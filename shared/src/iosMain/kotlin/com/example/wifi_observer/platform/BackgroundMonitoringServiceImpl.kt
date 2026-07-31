@@ -18,6 +18,7 @@ import platform.BackgroundTasks.BGTaskScheduler
 import platform.Foundation.NSLock
 import platform.Foundation.NSUserDefaults
 import kotlin.concurrent.Volatile
+import kotlin.coroutines.cancellation.CancellationException
 
 /**
  * BGTaskScheduler により、OS が起こしたタイミングで監視をバッチ実行する。
@@ -95,7 +96,10 @@ class BackgroundMonitoringServiceImpl(
         }
 
         task.setExpirationHandler { job.cancel() }
-        job.invokeOnCompletion { cause -> task.setTaskCompletedWithSuccess(cause == null) }
+        // 理由を明示していないキャンセル(期限切れ)と観測中の例外だけが失敗。OS はこの成否を以後の起動判断に使う
+        job.invokeOnCompletion { cause ->
+            task.setTaskCompletedWithSuccess(cause == null || cause is MonitoringStopped)
+        }
     }
 
     private fun startNextBatchCycle(): Job? {
@@ -113,7 +117,7 @@ class BackgroundMonitoringServiceImpl(
         sessionStore.endSession()
         BGTaskScheduler.sharedScheduler.cancelTaskRequestWithIdentifier(TASK_IDENTIFIER)
         // 取り消せるのは保留中の予約だけで、実行中のバッチはそのまま検知・通知しうるため明示的に止める
-        observeJob?.cancel()
+        observeJob?.cancel(MonitoringStopped())
         observeJob = null
     }
 
@@ -134,6 +138,9 @@ class BackgroundMonitoringServiceImpl(
         const val TASK_IDENTIFIER = "com.example.wifi_observer.network-monitoring-refresh"
     }
 }
+
+/** ユーザーの停止によるキャンセル。期限切れによる打ち切りと区別するために理由として渡す。 */
+internal class MonitoringStopped : CancellationException("monitoring stopped")
 
 private object DiscardingNetworkStatusPresenter : NetworkStatusPresenter {
     /**

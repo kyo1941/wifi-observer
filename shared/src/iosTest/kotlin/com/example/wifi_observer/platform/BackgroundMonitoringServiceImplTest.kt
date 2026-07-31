@@ -15,6 +15,7 @@ import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertIs
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.time.TestTimeSource
@@ -157,4 +158,21 @@ class BackgroundMonitoringServiceImplTest {
 
         assertTrue(batchJob.isCancelled)
     }
+
+    /**
+     * 期限切れによる打ち切りと区別できないと、ユーザーが止めただけのバッチを OS へ失敗として報告してしまう。
+     */
+    @Test
+    fun `stop によるキャンセルは理由を明示する`() =
+        runTest {
+            val service = newService()
+            val batchJob = service.launchObserveBatch()
+            var cause: Throwable? = null
+            batchJob.invokeOnCompletion { cause = it }
+
+            service.stop()
+            batchJob.join()
+
+            assertIs<MonitoringStopped>(cause)
+        }
 }
