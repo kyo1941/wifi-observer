@@ -2,9 +2,6 @@ package com.example.wifi_observer.platform
 
 import com.example.wifi_observer.domain.gateway.NetworkConnectivity
 import com.example.wifi_observer.domain.model.NetworkStatus
-import kotlin.time.Duration.Companion.minutes
-import kotlin.time.Duration.Companion.seconds
-import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.delay
@@ -24,7 +21,7 @@ import platform.Network.nw_path_monitor_start
 import platform.Network.nw_path_status_satisfied
 import platform.Network.nw_path_uses_interface_type
 import platform.darwin.dispatch_queue_create
-import platform.posix.time
+import kotlin.time.Duration.Companion.seconds
 
 /**
  * NWPathMonitor(C API)でネットワーク接続状態の変化を監視する。
@@ -32,14 +29,16 @@ import platform.posix.time
  */
 class NetworkConnectivityImpl(
     private val isBatchLaunch: Boolean,
-    private val userDefaults: NSUserDefaults = NSUserDefaults.standardUserDefaults,
+    userDefaults: NSUserDefaults = NSUserDefaults.standardUserDefaults,
 ) : NetworkConnectivity {
+    private val sessionStore = MonitoringSessionStore(userDefaults)
+
     override fun observeNetworkStatus(): Flow<Result<NetworkStatus>> {
         val rawStatus =
             callbackFlow {
                 if (isBatchLaunch) {
                     // 前回プロセスが保存した接続種別を Flow 先頭で replay する
-                    loadPreviousTypeIfFresh()?.let { trySend(Result.success(NetworkStatus.Connected(it))) }
+                    sessionStore.loadPreviousTypeIfFresh()?.let { trySend(Result.success(NetworkStatus.Connected(it))) }
                 }
 
                 val queue = dispatch_queue_create("com.example.wifi_observer.network-monitor", null)
@@ -66,9 +65,9 @@ class NetworkConnectivityImpl(
                     fun commit() {
                         trySend(Result.success(status))
                         when (status) {
-                            is NetworkStatus.Connected -> saveType(status.type)
+                            is NetworkStatus.Connected -> sessionStore.savePreviousType(status.type)
                             // 非接続を確認できた以上、以前保存した接続種別をそのままreplayに使うと実際にあった切断期間を無視してしまうため、ここで無効化する
-                            NetworkStatus.NotConnected -> clearPreviousType()
+                            NetworkStatus.NotConnected -> sessionStore.clearPreviousType()
                         }
                     }
 
@@ -99,60 +98,8 @@ class NetworkConnectivityImpl(
         return if (isBatchLaunch) rawStatus else rawStatus.distinctUntilChanged()
     }
 
-    private fun loadPreviousTypeIfFresh(): NetworkStatus.NetworkType? {
-        if (userDefaults.objectForKey(PREVIOUS_TYPE_SAVED_AT_KEY) == null) {
-            return null
-        }
-
-        val savedAt = userDefaults.doubleForKey(PREVIOUS_TYPE_SAVED_AT_KEY)
-        val elapsed = (nowEpochSeconds() - savedAt).seconds
-
-        if (elapsed > REPLAY_STALENESS_THRESHOLD) {
-            return null
-        }
-
-        return userDefaults.stringForKey(PREVIOUS_TYPE_KEY)?.toNetworkType()
-    }
-
-    private fun saveType(type: NetworkStatus.NetworkType) {
-        userDefaults.setObject(type.toStorageValue(), forKey = PREVIOUS_TYPE_KEY)
-        userDefaults.setDouble(nowEpochSeconds(), forKey = PREVIOUS_TYPE_SAVED_AT_KEY)
-    }
-
-    private fun clearPreviousType() {
-        userDefaults.removeObjectForKey(PREVIOUS_TYPE_KEY)
-        userDefaults.removeObjectForKey(PREVIOUS_TYPE_SAVED_AT_KEY)
-    }
-
-    @OptIn(ExperimentalForeignApi::class)
-    private fun nowEpochSeconds(): Double = time(null).toDouble()
-
     companion object {
-        internal const val PREVIOUS_TYPE_KEY = "com.example.wifi_observer.previous_network_type"
-        internal const val PREVIOUS_TYPE_SAVED_AT_KEY = "com.example.wifi_observer.previous_network_type_saved_at"
-
-        // NWPathMonitor起動直後の初期発火が安定するまで待つデバウンス時間
+        /** NWPathMonitor 起動直後の初期発火が安定するまで待つデバウンス時間。 */
         private val SETTLE_WINDOW = 1.seconds
-
-        // 別バッチにて保存された前回の接続種別をreplayとして信用してよい期間。
-        // NotConnectedの観測時点でclearPreviousType()により無効化されるため、この閾値が実際に効くのは「切断が一度も観測されないまま時間が経過した」場合のみ。
-        // BGTaskSchedulerの実起動間隔(OS裁量で15分〜数時間、それ以上空くこともある)に閾値を合わせるのではなく、
-        // 「これより古い情報を"たった今起きたこと"として通知するのは意味がない」というアプリ側の基準として決め、OSがこの時間内に起動しなければ 検知を諦める(通知しない)という意図的なトレードオフとする。
-        private val REPLAY_STALENESS_THRESHOLD = 15.minutes
     }
 }
-
-internal fun NetworkStatus.NetworkType.toStorageValue(): String =
-    when (this) {
-        NetworkStatus.NetworkType.Wifi -> "wifi"
-        NetworkStatus.NetworkType.Mobile -> "mobile"
-        NetworkStatus.NetworkType.Other -> "other"
-    }
-
-internal fun String.toNetworkType(): NetworkStatus.NetworkType? =
-    when (this) {
-        "wifi" -> NetworkStatus.NetworkType.Wifi
-        "mobile" -> NetworkStatus.NetworkType.Mobile
-        "other" -> NetworkStatus.NetworkType.Other
-        else -> null
-    }

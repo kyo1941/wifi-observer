@@ -52,11 +52,13 @@ com/example/wifi_observer/
 ├── di/AppContainer.kt
 └── WifiObserverApplication.kt
 
-【iOS ネイティブ層（将来 phase 4）】
+【iOS ネイティブ層（phase 4）】
 - platform（iosMain）: NWPathMonitor 版 NetworkConnectivityImpl、
   UNUserNotificationCenter 版 NetworkNotifierImpl、
-  BGTaskScheduler + UserDefaults 統合の BackgroundMonitoringService 実装
-- 状態保持 Facade（NetworkMonitor 相当）と ViewModel は Swift でネイティブ実装
+  BGTaskScheduler + UserDefaults 統合の BackgroundMonitoringService 実装、
+  UNUserNotificationCenter 版 NotificationPermissionRepositoryImpl
+- ViewModel と View は Swift でネイティブ実装。NetworkMonitor 相当の Facade は iOS では作らない
+  （フォアグラウンドでは ViewModel が Presenter を直接実装できるため。2 節末尾を参照）
 ```
 
 ### 1.1 なぜ NetworkMonitor / ViewModel を共通化しないか
@@ -102,7 +104,7 @@ iOS の `NetworkConnectivityImpl`（`iosMain`、phase 4）の責務：
 
 UseCase は値や `Job` を返さず、Presenter 経由で外側へ通知する点は不変。監視 coroutine の起動と `Job` 管理は、Android では `ForegroundMonitoringService`、iOS では `BackgroundMonitoringServiceImpl` などの Platform 側が担当する。
 
-> NOTE: replay した「前回状態」も `statusPresenter.onNetworkStatusUpdated()` に渡る。かつてはこの replay がフォアグラウンド起動時（ライブ監視）にも走り、①UIのちらつき、②長時間オフライン後の古い遷移の誤通知、を起こしうる点が課題だったが、`NetworkConnectivityImpl`（iosMain）のコンストラクタ引数 `isBatchLaunch: Boolean` により解決済み（`isBatchLaunch = true` のバッチ起動時にのみ replay する。フォアグラウンド用途では `isBatchLaunch = false` を渡し、replay せず Android と同様に継続監視する）。呼び出し元（Swift 側 `AppContainer`/`BackgroundMonitoringServiceImpl`）がどちらの文脈かを知っているため、コンストラクタで明示的に渡す設計とした。iOS の `NetworkStatusPresenter` 実装（Swift、未着手）がこの先頭 emission をどう UI に反映するかは phase 4 の残タスクで確定する。
+> NOTE: replay した「前回状態」も `statusPresenter.onNetworkStatusUpdated()` に渡る。かつてはこの replay がフォアグラウンド起動時（ライブ監視）にも走り、①UIのちらつき、②長時間オフライン後の古い遷移の誤通知、を起こしうる点が課題だったが、`NetworkConnectivityImpl`（iosMain）のコンストラクタ引数 `isBatchLaunch: Boolean` により解決済み（`isBatchLaunch = true` のバッチ起動時にのみ replay する。フォアグラウンド用途では `isBatchLaunch = false` を渡し、replay せず Android と同様に継続監視する）。呼び出し元（Swift 側 `AppContainer`/`BackgroundMonitoringServiceImpl`）がどちらの文脈かを知っているため、コンストラクタで明示的に渡す設計とした。バッチ起動時の `statusPresenter` は no-op であるため（2 節末尾）、この先頭 emission が UI に反映されることはない。
 
 ### `NetworkUseCase` は「同一プロセス内の継続した系列」だけを扱う
 
@@ -110,14 +112,41 @@ UseCase は値や `Job` を返さず、Presenter 経由で外側へ通知する�
 
 この原則に基づき、②の長時間オフライン後の誤通知は次のように解決した（Androidの5秒grace = 継続監視中に発生する技術的アーティファクトの吸収、とは全く別の概念であることに注意）：
 
-- `NetworkConnectivityImpl` は前回の接続種別を保存する際、保存時刻（epoch秒）も併せて `NSUserDefaults` に保存する
+- この永続化は `MonitoringSessionStore`（iosMain）が担い、`NSUserDefaults` のキーを単独で所有する。保持するのは「監視セッションの開始時刻」と「そのセッション中に直前に観測した接続種別＋保存時刻」で、読み書きするのは `NetworkConnectivityImpl`（観測のたびに保存・無効化）と `BackgroundMonitoringServiceImpl`（セッションの開始と終了）の2箇所。どちらもこの store 越しにのみ触る
 - **`NotConnected` を観測した場合は、保存済みの接続種別を即座に無効化する**（主たる防御）。切断が確認された以上、それより前の接続種別をreplayに使うと確認済みの切断期間を無視してしまうため
-- `isBatchLaunch = true` でのreplay判断時、保存時刻が一定の閾値より古ければ、**replayそのものを行わない**（`NetworkUseCase`は`lastConnectedType=null`から始まり、結果的に通知は発火しない）。この閾値が実際に効くのは「切断が一度も観測されないまま時間が経過した」場合のみの保険的な位置づけ
+- **監視を停止した場合も同様に無効化する**。停止中の切り替えは誰も観測していないため、再開後の最初のバッチが停止前の種別をreplayすると、監視していなかった区間で起きた切り替えを「たった今の切り替え」として通知してしまう（WiFiで停止 → 停止中にMobileへ切り替え → 15分以内に再開、で発火する。PRレビュー指摘）。「新しい監視セッションは前のセッションの最後の値を前提にしない」という形で、上の `NotConnected` と同じ原則に揃えている
+  - **セッションの終了はすべて `endSession()` を通す**（`stop()` と、再投入に失敗して監視を続けられなくなった場合）。終わり方ごとに後始末が散らばると、読み手が全パターンを把握しないとバグを踏む構造になるため、入口を1つに固定する。再投入に失敗した場合はそのバッチを走らせずに終える — 出口ごとに処理が変わると入口を統一する意味が失われるので、最後の1回の検知機会は捨てる
+  - **読み込み時にも「今のセッションで保存された値か」を確認する**（`savedAt >= sessionStartedAt`）。これは `endSession()` が構造的に手を伸ばせない経路への保険で、①後始末の完了前にプロセスが終了した場合 ②`observeJob` が追跡しない観測者（task2 で Swift が回す前面監視）が停止直後に書き戻した場合、を拾う。責務は終了側に置いたままで、届かない範囲だけを読み込み側で補う
+  - 時刻は秒未満まで持つ（`NSDate.timeIntervalSince1970`）。1秒精度だと、停止と再開が同じ秒に収まった際にセッションの前後関係を判定できない
+  - 保存時刻の判定では、経過時間が負の場合も期限切れとして扱う。端末の時計が保存後に巻き戻ると、そのままでは時計が追いつくまで無期限に replay され続けるため
+- `isBatchLaunch = true` でのreplay判断時、保存時刻が一定の閾値より古ければ、**replayそのものを行わない**（`NetworkUseCase`は`lastConnectedType=null`から始まり、結果的に通知は発火しない）。この閾値が実際に効くのは「切断も停止も起きないまま時間が経過した」場合のみの保険的な位置づけ
   - 閾値は**`BGTaskScheduler`の実起動間隔に合わせて決めるものではない**。実起動間隔はOSの裁量による機会主義的なもので15分〜数時間、それ以上（あるいは実行なし）もありうるため、これに閾値を合わせようとすると「何時間も前の出来事を"たった今"として通知する」ことを許容してしまい、通知自体の意味が失われる
   - 代わりに「これより古い情報を通知に使うのは無意味」というアプリ側の基準（15分）を閾値とし、OSがこの時間内に起動しなければ検知を諦める（通知しない）という意図的なトレードオフを採る（PRレビューで最初に60秒→24時間と提案したが、いずれも上記の理由で不適切と判断し15分に変更した経緯がある）
 - 保存(接続種別・保存時刻とも)は `isBatchLaunch` に関わらず常に行う
 
 また、`NWPathMonitor` は起動直後に確定していない値を複数回連続して返すことがある（Apple Developer Forumsでも既知の挙動として報告されている）ため、`isBatchLaunch = true` の場合はNWPathMonitorの発火が一定時間（デバウンス窓）静止するまで待ち、最後に観測した値を確定値として扱ってから `Flow` を完了させる。これも`NetworkConnectivityImpl`内部だけで完結し、`NetworkUseCase`には一切影響しない。
+
+### iOS の Presenter 配線と FG/BG 切り替え（phase 4 タスク1 での設計確定事項）
+
+iOS では Presenter の実装が実行文脈ごとに2つに分かれる。判断基準は「ViewModel が Present された値を拾って状態を更新できるか」であり、Android で Monitor 層を噛ませた動機と同じ問題への iOS 版の答えである。
+
+- **フォアグラウンド**: Swift の ViewModel が `NetworkStatusPresenter` / `NetworkNotificationPresenter` を実装し、`isBatchLaunch = false` で `observe()` を回す。ViewModel が直接拾えるため、`NetworkMonitor` 相当の中間 Facade は作らない。
+- **バックグラウンド（`BGTaskScheduler` バッチ）**: OS はプロセスと `App.init()` を起こすが UI シーンを接続しないため、View も ViewModel も生成されない。よって `BackgroundMonitoringServiceImpl`（iosMain）自身が `NetworkNotificationPresenter` を実装し、通知発火は `NetworkNotifier` に委譲する。`statusPresenter` には no-op 実装を渡す — バッチのプロセスは UseCase 完了後に破棄されるため、Present された状態の更新先（UI・メモリ・鮮度の観点で意味のある永続化先）が構造的に存在しない。初期画面の表示は、Android では Monitor のメモリ保持が担っていた役割を、iOS ではフォアグラウンド起動時の観測の即時性（NWPathMonitor が監視開始直後に現在状態を発火する）が担う。
+
+`BackgroundMonitoringServiceImpl` の公開 API は共通 interface の `start()`/`stop()` に加え、interface 外の `register()` を持つ:
+
+- `register()`: `BGTaskScheduler` へのハンドラ登録。アプリ起動完了前に毎回呼ぶ必要がある（遅れると OS のタスク起動時にクラッシュする）ため、Swift の App 初期化から毎起動時に呼ぶ。「監視開始」とは無関係の起動時儀式であり、Android には存在しない概念のため共通 interface には足さない（iOS 固有の事情を common に漏らさない）。
+- `start()` = `submitTaskRequest`（予約1件）。`BGAppRefreshTaskRequest` の実行は一回きりのため、launchHandler 内で observe 完了後に次の予約を再投入する。この連鎖は impl 内部に閉じ、Swift 側は再スケジュールを意識しない。予約はユーザーが Background App Refresh を無効化している等の理由で拒否されうるため、成立を確認してからセッションを開始する。再投入が拒否された場合は連鎖が途切れて以後の検知が走らないため、逆にセッションを終える。
+- `stop()` は `endSession()` を呼ぶだけ。`endSession()` はセッションの終了（＝監視中の状態を降ろし、次回の遷移判定に使う基準値を捨てる）、保留中の予約の取り消し、実行中のバッチの cancel を行う。取り消せるのは保留中の予約だけで、実行中のものはそのまま検知・通知しうるため cancel が要る。この後始末は再投入の失敗時も同じ関数を通る（2 節を参照）。「監視中かどうか」はセッションの開始時刻が保存されているかで表し、再投入の抑止判定と FG 復帰時の再構成判定の両方が同じ値を見る。
+  - セッションの開始・終了と、launchHandler 側の「セッション確認 → Job 設置」は `NSLock` で排他する。`stop()` は UI から、launchHandler は `BGTaskScheduler` のキューから呼ばれるため、確認と設置の間に割り込まれると停止後にバッチが起動しうる。
+  - 通知の発火も同じロック下でセッションを確認する。遷移の判定から発火までは中断点がなく `Job.cancel()` が効かないため、その最中に停止が割り込むと停止後に通知が届いてしまう。**停止の直前に検知した本物の遷移でも捨てる** — 停止を押した時点で通知は求められておらず、「検知したものは必ず届ける」より「停止したら止まる」を優先する。
+  - `stop()` による cancel は、期限切れによる打ち切りと区別できるよう理由（`MonitoringStopped`）を渡す。BGTask の成否は OS が以後の起動判断に使うため、ユーザーが止めただけのものを失敗として報告しない。理由を明示していないキャンセルは失敗側に倒れる。
+
+FG↔BG の切り替え追従は「中断状態を作らない」方針で担保する:
+
+- BG へ移るたびにフォアグラウンドの `observe()` を cancel する。suspend で凍結したコルーチンを残すと、コルーチンローカルの `lastConnectedType` が古いまま復帰時の再発火と噛み合い、何時間も前の Wifi→Mobile を「たった今」として二重通知するため（上記「同一プロセス内の継続した系列」の前提が suspend で破れる）。
+- FG 復帰時は監視中かどうか（`stop()` の項と同一の値）を読み、稼働中なら `observe()` を新規起動、待機中なら待機画面で再構成する。フラグ未設定（初回起動・再インストール等）は待機側に倒す。バッチ連鎖の再投入判定も同じフラグを見るため、両経路の稼働/停止がずれない。なお shared 側の宣言には「何ができるか」だけを書き、アプリ上でどう使うかは呼び出し側である Swift のコードにコメントする。具体的には「`isMonitoring` を FG 復帰時の再構成判断に使う」ことも「`register()` を監視の開始状態に関わらず毎回のアプリ起動時に呼ぶ」ことも Swift 側に書く（shared は iOS アプリ専用ではなく、使われ方を知らない API として保つため）。
+- 結果として BG 中の検知はバッチ連鎖、FG の検知は「その滞在中に始まった系列」と責務が分かれ、common（`NetworkUseCase`）には一切手を入れない。
 
 ---
 
@@ -203,8 +232,9 @@ struct WifiObserverApp: App {
   - [x] iOS `iosMain` において `NWPathMonitor`（`platform.Network` の C API）を用いた `NetworkConnectivityImpl` を実装（`shared/src/iosMain/kotlin/com/example/wifi_observer/platform/NetworkConnectivityImpl.kt`）
   - [x] 上記 `NetworkConnectivityImpl` に `NSUserDefaults` 永続化を内包し、バッチ起動時に前回の接続種別を `Flow` 先頭へ replay → 現在状態 emit → 現在種別を保存（2 節の設計）。前回状態の replay をバッチ起動時に限定する既知の課題は、コンストラクタ引数 `isBatchLaunch: Boolean` の DI フラグで解決した（`isBatchLaunch = true` のときのみ replay し、現在値を1件受け取った時点で `Flow` を完了させて `BGTaskScheduler` の実行時間制約に収める。保存自体は `isBatchLaunch` に関わらず常に行う）
   - [x] 長時間オフライン後にreplayされた古い前回状態で誤通知が発生する課題（PRレビュー指摘）を解決。`NotConnected` 観測時に保存済み接続種別を即座に無効化するのを主たる防御とし、保存時刻（`NSUserDefaults`に併記）による閾値判定は「切断が一度も観測されなかった場合」の保険とする。閾値は`BGTaskScheduler`の実起動間隔に合わせるのではなく「これより古い情報は通知として無意味」というアプリ側の基準(15分)とし、OSの起動がそれより遅れた場合は検知を諦める意図的なトレードオフとした（2節を参照）。また `NWPathMonitor` 起動直後の未確定な連続発火に対応するため、`isBatchLaunch` 時は一定時間の静止(デバウンス)を待ってから確定値として扱う
-  - [ ] iOS 用 `BackgroundMonitoringServiceImpl` にて `BGTaskScheduler` を実装し、状態の保存/復元は `NetworkConnectivityImpl` に委譲する（`NetworkNotificationPresenter` も実装）
-  - [ ] Xcode プロジェクト・Swift 側（`AppContainer` 相当の DI、`NetworkNotifierImpl`、`NetworkMonitor`/ViewModel/UI のネイティブ実装）の追加
+  - [x] iOS 用 `BackgroundMonitoringServiceImpl`（iosMain）にて `BGTaskScheduler` を実装する。状態の保存/復元は `NetworkConnectivityImpl` に委譲。`NetworkNotificationPresenter` を自身で実装し、通知発火は同じく本タスクで実装する `NetworkNotifierImpl`（UNUserNotificationCenter 版、iosMain）に委譲する。`statusPresenter` は no-op、`register()` は interface 外公開、launchHandler 内での再投入とセッション管理を含む（2 節末尾の設計確定事項を参照）。検証は `:shared` の iOS ターゲットコンパイル + iosTest まで（実機での実起動確認は次項）
+  - [ ] Xcode プロジェクト・Swift 側（`AppContainer` 相当の DI、ViewModel/UI のネイティブ実装。ViewModel が両 Presenter を直接実装し、scenePhase による監視の cancel/再構成を含む）の追加。iosMain の `NotificationPermissionRepositoryImpl`（UNUserNotificationCenter 版）もここで実装する。`Info.plist` の `BGTaskSchedulerPermittedIdentifiers` 宣言と実機/シミュレータでの実起動確認を含む
+  - [ ] 監視の開始に失敗したことをユーザーへ提示する。現在 `BackgroundMonitoringService.start()` は `Unit` を返すため、iOS では予約が拒否されても待機表示のまま理由が分からず、Android では `Loading` のまま抜けられない。共通 interface に失敗を伝える経路がないことが原因で、Android にも影響する（issue #22）
   - [ ] （上記2点の完了後・独立タスク）Android 側 `platform` 実装（`NetworkConnectivityImpl` / `NetworkNotifierImpl` / `ForegroundMonitoringService` 等）を `:app` から `:shared/androidMain` へ移動し、iOS(`iosMain`)と配置を揃える
 
 > NOTE: 上記の Android `platform` 移動について。phase2 では `monitor`/`viewmodel`/`ui`/`platform` をまとめて `:app` に残置したが、その根拠（1.1節、`StateFlow` が Swift から直接購読できない問題）は `monitor`/`viewmodel` 固有のものであり、`platform`（gateway 実装）には本来当てはまらない。`platform` は Kotlin が Kotlin のインターフェースを実装するだけの話で、Android は `:app` と `:shared/androidMain` のどちらに置いても技術的制約は同じ（iOS は Swift が `commonMain` の Kotlin インターフェースを実装できないため `shared/iosMain` に置かざるを得なかった、という技術的必然があるのとは異なる）。したがって `platform` が `:app` に残っているのは「意図した設計」というより phase2 で他の3つと一緒くたに扱われた経緯によるもので、`:shared/androidMain` へ移してiOSと配置を揃える方が構造的には筋が良い。ただし `ForegroundMonitoringService` は `AndroidManifest.xml` に登録された実際の `Service` クラスであり、単純なファイル移動では済まずマニフェスト・`AppContainer` の DI 配線の見直しを伴う。この移動は iOS 側の残タスク（`BackgroundMonitoringServiceImpl`・Swift/UI）と技術的依存関係が無く、独立して後回しにできるため、既存Androidの動作確認とiOSの新規実装検証が混ざらないよう、上記2点を先に完了させてから着手する。
